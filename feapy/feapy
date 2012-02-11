@@ -1,0 +1,25 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+# This file is part of feapy - See LICENSE.txt
+#
+import sys
+
+from base import FEError
+from parser import Parser, ParserError
+
+def main(casename):
+    try:
+        Parser(casename + '.inp')
+    except ParserError, msg:
+        print >>sys.stderr, msg
+    except FEError, msg:
+        print >>sys.stderr, msg
+
+if __name__ == '__main__':
+    if len(sys.argv) == 2:
+        sys.exit(main(sys.argv[1]))
+    else:
+        print >>sys.stderr, "feapy casename"
+        sys.exit(0)
+    

@@ -1,0 +1,6 @@
+# compiled python files
+*.pyc
+*.pyo
+# python extension modules
+*.pyd
+*.so

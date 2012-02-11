@@ -1,0 +1,22 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+# This file is part of feapy - See LICENSE.txt
+#
+import sys
+import os
+import glob
+
+if __name__ == '__main__':
+    if os.path.exists('check.log'):
+        os.remove('check.log')
+        
+    for file in glob.glob("*.frd"):
+        os.remove(file)
+    
+    for file in glob.glob("*.dat"):
+        os.remove(file)
+    
+    for file in glob.glob("*.sec"):
+        os.remove(file)
+    

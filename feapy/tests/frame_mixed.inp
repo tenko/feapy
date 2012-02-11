@@ -1,0 +1,35 @@
+*HEADING Frame test1 mixe beam & truss
+*NODE, NSET=Nall
+1,  0., 0., 0.
+2,  0., 0., 100.
+3,  100., 0., 100.
+4,  100., 0., 0.
+*ELEMENT, TYPE=B31, ELSET=Eall
+1, 1, 2
+2, 2, 3
+*ELEMENT, TYPE=T3D2, ELSET=Eall
+3, 3, 4
+*BEAM SECTION, SECTION=GENERAL, ELSET=Eall
+10., 100., 200., 300.
+0, 0, 1.
+30E6, 12E6, 0.4
+**
+** Node 1 & 4 fixed
+**
+*BOUNDARY
+1, 1, 6
+4, 1, 3
+**
+** Load case #1 - Horisontal load of 5000 in node 2
+**
+*STEP
+*STATIC
+*CLOAD
+2,1,5000.
+*NODE PRINT, TOTALS=YES, NSET=Nall
+ U, RF
+*EL PRINT, ELSET=Eall
+ SF
+*NODE FILE
+ U, RF
+*END STEP

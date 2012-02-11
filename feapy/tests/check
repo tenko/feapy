@@ -1,0 +1,102 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+# This file is part of feapy - See LICENSE.txt
+#
+import sys
+import os
+import re
+import glob
+import itertools
+
+def strip(s):
+    return re.sub("\s+" , "", s)
+    
+def main():
+    log = open('check.log', 'w')
+    
+    for path in glob.glob('*.inp'):
+        isOK = True
+        
+        filename = os.path.split(path)[-1]
+        casename = os.path.splitext(filename)[0]
+        
+        # remove old files
+        for ext in ('.dat', '.frd', '.sec'):
+            if os.path.exists(casename + ext):
+                os.remove(casename + ext)
+        
+        # solve case
+        print >>log, "Solving %s ..." % casename
+        os.system("../feapy %s" % casename)
+        
+        # check if files are created
+        exts = ('.dat', '.frd')
+        for ext in ('.dat', '.frd'):
+            if not os.path.exists(casename + ext):
+                if not os.path.exists(casename + '.sec'):
+                    args = casename, ext
+                    print >>log, "ERROR %s: file %s not created" % args
+                    isOK = False
+                else:
+                    exts = ('.sec',)
+        
+        # check if content of files are similar
+        for ext in exts:
+            content = open(casename + ext).read()
+            ref = open(casename + ext + '.ref').read()
+            
+            if strip(content) != strip(ref):
+                content = [line.rstrip() for line in open(casename + ext) if line.strip()]
+                ref = [line.rstrip() for line in open(casename + ext + '.ref') if line.strip()]
+                
+                for test, correct in zip(content, ref):
+                    if test.startswith('    1UTIME') or test.startswith('    1UDATE'):
+                        continue
+                    
+                    if test.startswith('** Date:') or test.startswith('** Time:'):
+                        continue
+                        
+                    if test != correct:
+                        a = test.split()
+                        b = correct.split()
+                        
+                        if len(a) != len(b):
+                            print >>log, "LINE  :'%s'" % test
+                            print >>log, "EXPECT:'%s'" % correct
+                            isOK = False
+                            break
+                        
+                        for va, vb in zip(a, b):
+                            try:
+                                va = float(va)
+                            except ValueError:
+                                print >>log, "LINE  :'%s'" % test
+                                print >>log, "EXPECT:'%s'" % correct
+                                isOK = False
+                                break
+                            
+                            try:
+                                vb = float(vb)
+                            except ValueError:
+                                print >>log, "LINE  :'%s'" % test
+                                print >>log, "EXPECT:'%s'" % correct
+                                isOK = False
+                                break
+                            
+                            diff = abs(va - vb)
+                            if diff > 1e-10:
+                                print >>log, "DEVIATION"
+                                print >>log, "LINE  :'%s'" % test
+                                print >>log, "EXPECT:'%s'" % correct
+                                args = va, vb, diff
+                                print >>log, "abs(% 12.5E) - abs(% 12.5E) = % 12.5E" % args
+                                isOK = False 
+            
+        if isOK:
+            print >>log, "%s OK\n" % casename
+        else:
+            print >>log, "%s FAILED\n" % casename
+        
+if __name__ == '__main__':
+    main()
