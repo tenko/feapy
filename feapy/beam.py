@@ -322,16 +322,30 @@ class Truss(BaseBeam):
         res[3:6] = np.dot(T.T, res[3:6])
         
         return res
-        
-    def calcK(self):
+    
+    def calcKe(self):
         '''
-        Eval element stiffness matrix.
+        Eval element stiffness matrix in local coordinates
         '''
         mat = self.material
         prop = self.properties
         
         L = self.length()
         Ax, E = prop["Area"], mat["E"]
+        
+        # Stiffness matrix
+        Ke = np.zeros((2,2), dtype=float)
+        
+        AxEoverL = Ax*E/L
+        Ke[0,0] = AxEoverL; Ke[0,1] = -AxEoverL
+        Ke[1,0] =-AxEoverL; Ke[1,1] =  AxEoverL
+        
+        return Ke
+        
+    def calcK(self):
+        '''
+        Eval element stiffness matrix in global coordinates.
+        '''
         n1, n2 = self.nodes
         
         # Transforamtion matrix
@@ -348,11 +362,7 @@ class Truss(BaseBeam):
         T[1,3] = cx; T[1,4] = cy; T[1,5] = cz
         
         # Stiffness matrix
-        K = np.zeros((2,2), dtype=float)
-        
-        AxEoverL = Ax*E/L
-        K[0,0] = AxEoverL; K[0,1] = -AxEoverL
-        K[1,0] =-AxEoverL; K[1,1] =  AxEoverL
+        K = self.calcKe()
         
         # Evaluate Transformation K = T^T * K * T
         return np.dot(T.T,np.dot(K,T))
@@ -434,10 +444,10 @@ class Beam(BaseBeam):
             
             if self.properties[name] < TINY:
                 raise FEError("Properties parameter '%s' not correct" % name)
-        
-    def calcK(self):
+    
+    def calcKe(self):
         '''
-        Eval element stiffness matrix.
+        Eval element stiffness matrix in local coordinates.
         
         Includes transverse shear deformation. If no shear deflection
         constant (ShearZ and ShearY) is set, the displacement considers
@@ -446,7 +456,7 @@ class Beam(BaseBeam):
         Shear deflection constants for other cross-sections can be found in
         structural handbooks.
         '''
-        K = np.zeros((12,12), dtype=float)
+        Ke = np.zeros((12,12), dtype=float)
         
         mat = self.material
         prop = self.properties
@@ -460,6 +470,7 @@ class Beam(BaseBeam):
         
         J = prop.get("Ixx", 0.)
         if J == 0.:
+            # Simplification only valid for circular sections
             J = Iy + Iz
             
         Asy = prop.get("ShearY", 0.)
@@ -471,27 +482,35 @@ class Beam(BaseBeam):
         else:
             Ksy = Ksz = 0.
         
-        K[0,0]  = K[6,6]   = E*Ax / L
-        K[1,1]  = K[7,7]   = 12.*E*Iz / ( L3*(1.+Ksy) )
-        K[2,2]  = K[8,8]   = 12.*E*Iy / ( L3*(1.+Ksz) )
-        K[3,3]  = K[9,9] = G*J / L
-        K[4,4]  = K[10,10] = (4.+Ksz)*E*Iy / ( L*(1.+Ksz) )
-        K[5,5]  = K[11,11] = (4.+Ksy)*E*Iz / ( L*(1.+Ksy) )
+        Ke[0,0]  = Ke[6,6]   = E*Ax / L
+        Ke[1,1]  = Ke[7,7]   = 12.*E*Iz / ( L3*(1.+Ksy) )
+        Ke[2,2]  = Ke[8,8]   = 12.*E*Iy / ( L3*(1.+Ksz) )
+        Ke[3,3]  = Ke[9,9] = G*J / L
+        Ke[4,4]  = Ke[10,10] = (4.+Ksz)*E*Iy / ( L*(1.+Ksz) )
+        Ke[5,5]  = Ke[11,11] = (4.+Ksy)*E*Iz / ( L*(1.+Ksy) )
 
-        K[4,2]  = K[2,4]   = -6.*E*Iy / ( L2*(1.+Ksz) )
-        K[5,1]  = K[1,5]   =  6.*E*Iz / ( L2*(1.+Ksy) )
-        K[6,0]  = K[0,6]   = -K[0,0]
+        Ke[4,2]  = Ke[2,4]   = -6.*E*Iy / ( L2*(1.+Ksz) )
+        Ke[5,1]  = Ke[1,5]   =  6.*E*Iz / ( L2*(1.+Ksy) )
+        Ke[6,0]  = Ke[0,6]   = -Ke[0,0]
 
-        K[11,7] = K[7,11]  =  K[7,5] = K[5,7] = -K[5,1]
-        K[10,8] = K[8,10]  =  K[8,4] = K[4,8] = -K[4,2]
-        K[9,3] = K[3,9]  = -K[3,3]
-        K[10,2] = K[2,10]  =  K[4,2]
-        K[11,1] = K[1,11]  =  K[5,1]
+        Ke[11,7] = Ke[7,11]  =  Ke[7,5] = Ke[5,7] = -Ke[5,1]
+        Ke[10,8] = Ke[8,10]  =  Ke[8,4] = Ke[4,8] = -Ke[4,2]
+        Ke[9,3] = Ke[3,9]  = -Ke[3,3]
+        Ke[10,2] = Ke[2,10]  =  Ke[4,2]
+        Ke[11,1] = Ke[1,11]  =  Ke[5,1]
 
-        K[7,1]  = K[1,7]   = -K[1,1]
-        K[8,2]  = K[2,8]   = -K[2,2]
-        K[10,4] = K[4,10]  = (2.-Ksz)*E*Iy / ( L*(1.+Ksz) )
-        K[11,5] = K[5,11]  = (2.-Ksy)*E*Iz / ( L*(1.+Ksy) )
+        Ke[7,1]  = Ke[1,7]   = -Ke[1,1]
+        Ke[8,2]  = Ke[2,8]   = -Ke[2,2]
+        Ke[10,4] = Ke[4,10]  = (2.-Ksz)*E*Iy / ( L*(1.+Ksz) )
+        Ke[11,5] = Ke[5,11]  = (2.-Ksy)*E*Iz / ( L*(1.+Ksy) )
+        
+        return Ke
+        
+    def calcK(self):
+        '''
+        Eval element stiffness matrix in global coordinates.
+        '''
+        K = self.calcKe()
         
         # Eval coordinate transformation matrix
         Tl = self.calcT()
@@ -509,7 +528,7 @@ class Beam(BaseBeam):
     
     def calcStress(self):
         raise NotImplementedError()
-    
+        
     def calcNodalForces(self, res = None):
         '''
         Calculate corresponding global forces at nodes from
@@ -596,138 +615,68 @@ class Beam(BaseBeam):
         res[11] += load[1] * L / 12.
         
         return res
-        
+    
     def calcSectionForces(self, dx = 1e9):
-        '''
-        Eval beam section forces along element
-        '''
+        # find number of divisions
         try:
             nx = int(self.length()/dx)
-            nx = max(1, nx)
+            nx = min(max(1, nx), 100)
         except ZeroDivisionError:
             nx = 1
             dx = self.length()
         
         res = np.zeros((nx + 1, 7), dtype=float)
-        
-        prop = self.properties
-        mat = self.material
-        n1, n2 = self.nodes
-        
         L = self.length()
-        L2 = L*L
-        L3 = L2*L
         
-        E = mat['E']
-        G = mat['G']
-        Ax = prop['Area']
+        # Eval local coordinate transformation matrix
+        Tl = self.calcT()
         
-        Iyy = prop['Iyy']
-        Izz = prop['Izz']
+        # Build the final transformation matrix - a 12x12 matrix
+        T = np.zeros((12,12), dtype=float)
         
-        Ixx = prop.get("Ixx", 0.)
-        if Ixx == 0.:
-            Ixx = Iyy + Izz
+        for i in range(4):
+            for j in range(3):
+                for k in range(3):
+                    T[j+3*i,k+3*i] = Tl[j,k]
+                    
+        # Transform displacements and rotations from global to local coordinates
+        n1, n2 = self.nodes
+        d = np.zeros((12,), dtype=float)
+        d[:6] = n1.results
+        d[6:] = n2.results
         
-        Asy = prop.get("ShearY", 0.)
-        Asz = prop.get("ShearZ", 0.)
+        u = np.dot(T, d)
         
-        if Asy > 0. and Asz > 0.:
-            Ksy = 12.*E*Izz / (G*Asy*L2)
-            Ksz = 12.*E*Iyy / (G*Asz*L2)
-            Dsy = (1. + Ksy)*(1. + Ksy)
-            Dsz = (1. + Ksz)*(1. + Ksz)
-        else:
-            Ksy = Ksz = 0.
-            Dsy = Dsz = 1.
+        # Stiffness matrix in local coordinates
+        Ke = self.calcKe()
         
-        # Eval coordinate transformation matrix
-        T = self.calcT()
+        # Calculate forces in local directions
+        forces = np.dot(Ke, u)
         
-        # Transform displacements from global to local coordinates
-        u1 = np.zeros((6,), dtype=float)
-        u1[:3] = np.dot(T, n1.results[:3])
-        u1[3:6] = np.dot(T, n1.results[3:])
+        # Correct forces from eqivalent forces line loads
+        iforces = self.calcLocalNodalForces()
+        forces -= iforces
         
-        u2 = np.zeros((6,), dtype=float)
-        u2[:3] = np.dot(T, n2.results[:3])
-        u2[3:6] = np.dot(T, n2.results[3:])
-        
-        # Fetch internal forces from line loads in local directions
-        forces = self.calcLocalNodalForces()
-        
-        # position
         res[0,0] = 0.
+        res[0,1:] = forces[:6]
         
-        # Axial force, Nx
-        res[0,1] = (-Ax*E/L)*(u2[0] - u1[0]) - forces[0]
+        res[nx,0] = 1.
+        res[nx,1:] = -forces[6:]
         
-        # Sheare force Vy
-        res[0,2] = -(12.*E*Izz/(L3*(1.+Ksy))) * (u2[1] - u1[1]) \
-                   + (6.*E*Izz/(L2*(1.+Ksy))) * (u2[5] + u1[5]) \
-                   - forces[1]
-        
-        # Sheare force Vz
-        res[0,3] = -(12.*E*Iyy/(L3*(1.+Ksz))) * (u2[2] - u1[2])  \
-                   - (6.*E*Iyy/(L2*(1.+Ksz))) * (u1[4] + u2[4]) \
-                   - forces[2]
-        
-        # Torsion, Txx
-        res[0,4] = -(G*Ixx/L) * (u2[3] - u1[3])
-        
-        # Moment, Myy
-        res[0,5] = (6.*E*Iyy/(L2*(1.+Ksz)))*(u2[2] - u1[2]) \
-                    + ((4.+Ksz)*E*Iyy/(L*(1.+Ksz)))*u1[4] \
-                    + ((2.-Ksz)*E*Iyy/(L*(1.+Ksz)))*u2[4] \
-                    - forces[4]
-        
-        # Moment, Mzz
-        res[0,6] = -(6.*E*Izz/(L2*(1.+Ksy)))*(u2[1] - u1[1]) \
-                    + ((4.+Ksy)*E*Izz/(L*(1.+Ksy)))*u1[5] \
-                    + ((2.-Ksy)*E*Izz/(L*(1.+Ksy)))*u2[5] \
-                    - forces[5]
-        
-        if nx == 1:
-            # position
-            res[1,0] = 1.
-            
-            # Axial force, Nx
-            res[1,1] = -res[0,1]
-            
-            # Sheare force Vy
-            res[1,2] = -res[0,2]
-            
-            # Sheare force Vz
-            res[1,3] = -res[0,3]
-            
-            # Torsion, Txx
-            res[1,4] = -res[0,4]
-            
-            # Moment, Myy
-            res[1,5] = (6.*E*Iyy/(L2*(1.+Ksz)))*(u2[2] - u1[2]) \
-                        + ((4.+Ksz)*E*Iyy/(L*(1.+Ksz)))*u2[4] \
-                        + ((2.-Ksz)*E*Iyy/(L*(1.+Ksz)))*u1[4] \
-                        - forces[10]
-            # Moment, Mzz
-            res[1,6] = -(6.*E*Izz/(L2*(1.+Ksy)))*(u2[1] - u1[1]) \
-                        + ((4.+Ksy)*E*Izz/(L*(1.+Ksy)))*u2[5] \
-                        + ((2.-Ksy)*E*Izz/(L*(1.+Ksy)))*u1[5] \
-                        - forces[11]
-        
-        else:
-            # line load in local coordiantes
+        if nx > 1:
+            #  accumulate interior span loads
             load = self.calcLocalLoad()
             
-            #  accumulate interior span loads
             _dx = dx
             x = _dx
             for i in range(nx):
-                res[i + 1,0] = x/L                      # Position
-                res[i + 1,1] = res[i, 1] + load[0]*_dx  # Axial force, Nx
-                res[i + 1,2] = res[i, 2] + load[1]*_dx  # Sheare force Vy
-                res[i + 1,3] = res[i, 3] + load[2]*_dx  # Sheare force Vz
-                res[i + 1,4] = res[i, 4]                # Torsion, Txx
+                res[i + 1,0] = x/L                       # Position
+                res[i + 1,1] = res[i, 1] + load[0]*_dx   # Axial force, Nx
+                res[i + 1,2] = res[i, 2] + load[1]*_dx   # Sheare force Vy
+                res[i + 1,3] = res[i, 3] + load[2]*_dx   # Sheare force Vz
+                res[i + 1,4] = res[i, 4]                 # Torsion, Txx
                 
+                # correct last step if needed
                 if (i + 1)*_dx > L:
                     _dx = L - i*_dx
                 
@@ -736,13 +685,15 @@ class Beam(BaseBeam):
             # trapezoidal integration of shear force for bending momemnt
             _dx = dx
             for i in range(nx):
-                res[i + 1,5] = res[i,5] + .5*(res[i + 1, 3] + res[i, 3])*_dx
-                res[i + 1,6] = res[i,6] + .5*(res[i + 1, 2] + res[i, 2])*_dx
+                res[i + 1,5] = res[i,5] + .5*(res[i + 1, 3] + res[i, 3])*_dx # Myy
+                res[i + 1,6] = res[i,6] + .5*(res[i + 1, 2] + res[i, 2])*_dx # Mzz
                 
+                # correct last step if needed
                 if (i + 1)*_dx > L:
                     _dx = L - i*_dx
-        
+            
         return res
+        
         
 if __name__ == '__main__':
     import math
@@ -758,8 +709,8 @@ if __name__ == '__main__':
     free = BoundCon()
     
     n1 = Node(0.,0.,0., boundCon = fixed)
-    #n2 = Node(0.,0.,100., boundCon = BoundCon(Fx=5000.))
-    n2 = Node(0.,0.,100., boundCon = free)
+    n2 = Node(0.,0.,100., boundCon = BoundCon(Fx=5000.))
+    #n2 = Node(0.,0.,100., boundCon = free)
     n3 = Node(100.,0.,100., boundCon = free)
     n4 = Node(100.,0.,0., boundCon = fixed) 
     
@@ -780,4 +731,4 @@ if __name__ == '__main__':
     
     fe.printNodalDisp()
     fe.printNodalForces(totals='YES')
-    fe.printElementSectionForces()
+    fe.printElementSectionForces(dx=250.)
