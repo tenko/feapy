@@ -589,7 +589,13 @@ class Parser(FE, PostProcess):
             step = 0
             while not line.keyword and not line is EmptyLine:
                 if step == 0:
-                    if not len(line.parts) == 4:
+                    if len(line.parts) == 6:
+                        prop['ShearY'] = self.parse_float(line.parts[4], minimum = TINY)
+                        prop['ShearZ'] = self.parse_float(line.parts[5], minimum = TINY)
+                    elif len(line.parts) == 4:
+                        prop['ShearY'] = 0.
+                        prop['ShearZ'] = 0.
+                    else:
                         raise ParserError(line, '*BEAM SECTION definition malformed!')
                     
                     prop['Area'] = self.parse_float(line.parts[0], minimum = TINY)
@@ -817,7 +823,7 @@ class Parser(FE, PostProcess):
             if isInt(selection):
                 selection = (int(selection),)
             else:
-                selection = self.nset[selection]
+                selection = self.nset[selection.upper()]
             
             dof = self.parse_int(dof, minimum = 1, maximum = 6)
             value = self.parse_float(value)
