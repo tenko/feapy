@@ -573,10 +573,6 @@ class Parser(FE, PostProcess):
             elif part.startswith("SECTION="):
                 _, section = part.split("=")
                 
-            elif part.startswith("DENSITY="):
-                _, density = part.split("=")
-                mat['density'] = self.parse_float(density, minimum = TINY)
-                
             else:
                 raise ParserError(line, '*BEAM SECTION definition malformed!')
         
@@ -590,8 +586,8 @@ class Parser(FE, PostProcess):
             while not line.keyword and not line is EmptyLine:
                 if step == 0:
                     if len(line.parts) == 6:
-                        prop['ShearY'] = self.parse_float(line.parts[4], minimum = TINY)
-                        prop['ShearZ'] = self.parse_float(line.parts[5], minimum = TINY)
+                        prop['ShearY'] = self.parse_float(line.parts[4], minimum = 0.)
+                        prop['ShearZ'] = self.parse_float(line.parts[5], minimum = 0.)
                     elif len(line.parts) == 4:
                         prop['ShearY'] = 0.
                         prop['ShearZ'] = 0.
@@ -626,10 +622,13 @@ class Parser(FE, PostProcess):
                     
                 elif step == 2:
                     # material properties
-                    E, G, nu = line.parts
-                    mat['E'] = self.parse_float(E, minimum = TINY)
-                    mat['G'] = self.parse_float(G, minimum = TINY)
-                    mat['nu'] = self.parse_float(nu, minimum = TINY, maximum = 1.)
+                    mat['E'] = self.parse_float(line.parts[0], minimum = TINY)
+                    mat['G'] = self.parse_float(line.parts[1], minimum = TINY)
+                    mat['nu'] = self.parse_float(line.parts[2], minimum = TINY, maximum = 1.)
+                    
+                    # optional density
+                    if len(line.parts) == 4:
+                        mat['density'] = self.parse_float(line.parts[3], minimum = TINY)
                 
                 else:
                     raise ParserError(line, '*BEAM SECTION definition malformed!')
@@ -1080,7 +1079,7 @@ class Parser(FE, PostProcess):
         return value
         
 if __name__ == '__main__':
-    fe = Parser('frame_dload.inp')
+    fe = Parser('frame_rotated_section.inp')
     #os.chdir('tests')
     #fe = Parser('frame_tower.inp')
     
