@@ -173,6 +173,40 @@ class BaseBeam(Element):
         if nz != 0.:
             load = LineLoad(nz*weight, globalZ)
             self.loads.append(load)
+    
+    def calcLocalLoad(self):
+        '''
+        Calculate resultant of line loads
+        in local coordinates.
+        '''
+        Tl = self.calcT()
+            
+        # beam direction cos
+        nx = np.dot(Tl, (1.,0.,0.))
+        ny = np.dot(Tl, (0.,1.,0.))
+        nz = np.dot(Tl, (0.,0.,1.))
+        
+        force = res = np.zeros((3,), dtype = float)
+        
+        for load in self.loads:
+            if load.direction == globalX:
+                dx, dy, dz = nx
+            elif load.direction == globalY:
+                dx, dy, dz = ny
+            elif load.direction == globalZ:
+                dx, dy, dz = nz
+            elif load.direction == localX:
+                dx, dy, dz = 1., 0., 0.
+            elif load.direction == localY:
+                dx, dy, dz = 0., 1., 0.
+            else:
+               dx, dy, dz = 0., 0., 1.
+            
+            force[0] += load.force*dx
+            force[1] += load.force*dy
+            force[2] += load.force*dz
+        
+        return force
         
     def calcT(self):
         '''
@@ -288,32 +322,35 @@ class Truss(BaseBeam):
             if self.properties[name] < TINY:
                 raise FEError("Properties parameter '%s' not correct" % name)
     
-    def calcLineLoad(self, res, force, direction):
+    def calcLocalNodalForces(self, res = None):
         '''
         Calculate corresponding end forces at nodes from
         line loads in local directions
         '''
-        L = self.length()
-        LL = L * L
+        if res is None:
+            res = np.zeros((self.dofSet.count() * self.nodeCount,), dtype = float)
         
-        f1 = f2 = force * L / 2.
+        load = self.calcLocalLoad()
         
-        if direction != localX and abs(force) > TINY:
-            raise FEError('Truss can carry load only in axial direction')
-                
-        else:
-            res[0] += f1
-            res[3] += f2
+        # Nx
+        res[0] += .5*load[0]
+        res[3] += .5*load[0]
+        # Vy
+        res[1] += .5*load[1]
+        res[4] += .5*load[1]
+        # VZ
+        res[2] += .5*load[2]
+        res[5] += .5*load[2]
         
         return res
-    
+        
     def calcNodalForces(self, res = None):
         '''
         Calculate corresponding global forces at nodes from
         line loads
         '''
         # calculate local forces
-        self.calcLocalNodalForces(res)
+        res = self.calcLocalNodalForces(res)
         
         # Transforamtion matrix
         T = self.calcT()
@@ -346,6 +383,7 @@ class Truss(BaseBeam):
         '''
         Eval element stiffness matrix in global coordinates.
         '''
+        L = self.length()
         n1, n2 = self.nodes
         
         # Transforamtion matrix
@@ -356,7 +394,6 @@ class Truss(BaseBeam):
         cx = ( n2.cx - n1.cx ) / L
         cy = ( n2.cy - n1.cy ) / L
         cz = ( n2.cz - n1.cz ) / L
-        
         
         T[0,0] = cx; T[0,1] = cy; T[0,2] = cz
         T[1,3] = cx; T[1,4] = cy; T[1,5] = cz
@@ -397,7 +434,7 @@ class Truss(BaseBeam):
         res[0,1] = (-Ax*E/L)*(u2[0] - u1[0])
         
         res[1,0] = 1.
-        res[1,1] = -res[0,0]
+        res[1,1] = -res[0,1]
                     
         return res
         
@@ -534,7 +571,7 @@ class Beam(BaseBeam):
         Calculate corresponding global forces at nodes from
         line loads
         '''
-        self.calcLocalNodalForces(res)
+        res = self.calcLocalNodalForces(res)
         
         Tl = self.calcT()
         
@@ -549,40 +586,6 @@ class Beam(BaseBeam):
         res[:] = np.dot(T.T, res)
         
         return res
-        
-    def calcLocalLoad(self):
-        '''
-        Calculate resultant of line loads
-        in local coordinates.
-        '''
-        Tl = self.calcT()
-            
-        # beam direction cos
-        nx = np.dot(Tl, (1.,0.,0.))
-        ny = np.dot(Tl, (0.,1.,0.))
-        nz = np.dot(Tl, (0.,0.,1.))
-        
-        force = res = np.zeros((3,), dtype = float)
-        
-        for load in self.loads:
-            if load.direction == globalX:
-                dx, dy, dz = nx
-            elif load.direction == globalY:
-                dx, dy, dz = ny
-            elif load.direction == globalZ:
-                dx, dy, dz = nz
-            elif load.direction == localX:
-                dx, dy, dz = 1., 0., 0.
-            elif load.direction == localY:
-                dx, dy, dz = 0., 1., 0.
-            else:
-               dx, dy, dz = 0., 0., 1.
-            
-            force[0] += load.force*dx
-            force[1] += load.force*dy
-            force[2] += load.force*dz
-        
-        return force
     
     def calcLocalNodalForces(self, res = None):
         '''
@@ -600,7 +603,7 @@ class Beam(BaseBeam):
         
         # Nx
         res[0] += .5*load[0]
-        res[1] += .5*load[0]
+        res[6] += .5*load[0]
         # Vy
         res[1] += .5*load[1]
         res[7] += .5*load[1]
@@ -641,6 +644,11 @@ class Beam(BaseBeam):
                     
         # Transform displacements and rotations from global to local coordinates
         n1, n2 = self.nodes
+        if n1.cz > n2.cz:
+            fac = -1.
+        else:
+            fac = 1.
+            
         d = np.zeros((12,), dtype=float)
         d[:6] = n1.results
         d[6:] = n2.results
@@ -686,7 +694,7 @@ class Beam(BaseBeam):
             _dx = dx
             for i in range(nx):
                 res[i + 1,5] = res[i,5] + .5*(res[i + 1, 3] + res[i, 3])*_dx # Myy
-                res[i + 1,6] = res[i,6] + .5*(res[i + 1, 2] + res[i, 2])*_dx # Mzz
+                res[i + 1,6] = res[i,6] + fac*.5*(res[i + 1, 2] + res[i, 2])*_dx # Mzz
                 
                 # correct last step if needed
                 if (i + 1)*_dx > L:
@@ -702,16 +710,18 @@ if __name__ == '__main__':
     
     class BeamFE(FE, PostProcess):
         pass
-        
+    
+    csys = CoordSys().fromEuler132(math.radians(-45.),0.,0.)
+    
     fixed = BoundCon(Dx=0.,Dy=0.,Dz=0.,Rx=0.,Ry=0.,Rz=0.)
     pinned = BoundCon(Dx=0.,Dy=0.,Dz=0.)
-    roller = BoundCon(Dy=0.)
+    roller = BoundCon(Dx=0.)
     free = BoundCon()
     
-    n1 = Node(0.,0.,0., boundCon = fixed)
-    n2 = Node(0.,0.,100., boundCon = BoundCon(Fx=5000.))
-    #n2 = Node(0.,0.,100., boundCon = free)
-    n3 = Node(100.,0.,100., boundCon = free)
+    n1 = Node(0.,0.,0., boundCon = roller, coordSys = csys)
+    #n2 = Node(50.,0.,50., boundCon = BoundCon(Fx=5000.))
+    n2 = Node(50.,0.,50., boundCon = free)
+    n3 = Node(100.,0.,50., boundCon = free)
     n4 = Node(100.,0.,0., boundCon = fixed) 
     
     prof = Properties(Area=10., Ixx=100., Iyy=200., Izz=300.)
