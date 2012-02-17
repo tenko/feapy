@@ -856,6 +856,7 @@ class Parser(FE, PostProcess):
         else:
             nset = None
             totals = 'NO'
+            globals = False
             dat = {}
             
             for part in line.parts:
@@ -865,7 +866,17 @@ class Parser(FE, PostProcess):
                     
                 elif part.startswith("TOTALS="):
                     _, totals = part.split("=")
+                
+                elif part.startswith("GLOBAL="):
+                    _, globals = part.split("=")
                     
+                    if globals == 'NO':
+                        globals = False
+                    elif globals == 'YES':
+                        globals = True
+                    else:
+                        raise ParserError(line, 'GLOBAL parameter either YES ro NO')
+        
                 else:
                     raise ParserError(line, '*NODE PRINT definition malformed!')
             
@@ -878,7 +889,7 @@ class Parser(FE, PostProcess):
             pfh = self.printfh
             for arg in line.parts:
                 if arg == 'U':
-                    self.printNodalDisp(nset, self.printfh)
+                    self.printNodalDisp(nset, globals, self.printfh)
 
                 elif arg == 'RF':
                     self.printNodalForces(nset, totals, self.printfh)
