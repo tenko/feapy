@@ -861,7 +861,7 @@ class FE(object):
         else:
             raise FEError('unknown solver')
         
-    def solveReactions(self, nset = None, globalResults = True):
+    def solveReactions(self, nset = None):
         '''
         Calculate the reaction forces and store
         in nodes.
@@ -895,16 +895,17 @@ class FE(object):
             
             # element dofset
             dofset = element.dofSet
+            ndofs = dofset.count()
             
             # resize results vector
-            dofsize = dofset.count() * element.nodeCount
+            dofsize = ndofs * element.nodeCount
             resv.resize((dofsize,))
             resv[:] = 0.
             
             # every node of the element
             count, loop = 0, 0
             for node in element.nodes:
-                if node.coordSys is None or globalResults:
+                if node.coordSys is None:
                     # first DoF:ux
                     if dofset.count(0):
                         resv[count] = node.results[0]
@@ -934,11 +935,9 @@ class FE(object):
                     
                     # Get rotation matrix for this node
                     T = node.coordSys.toMatrix()
-                    # inverse of the rotation matrix
-                    Tinv = np.linalg.inv(T)
                     
                     # Transform local DoF in Global DoF for ux, uy and uz
-                    doft = np.dot(T, dof)
+                    doft = np.dot(T.T, dof)
                     
                     # check which case ... Beam, Shell, Solid...
                     if loop >= 1:
@@ -977,12 +976,15 @@ class FE(object):
             K = element.calcK()
             reaction = np.dot(K, resv)
             
+            # Correct forces from eqivalent forces line loads
+            iforces = element.calcNodalForces()
+        
             # write results back to selected nodes
             k = -1
             for node in element.nodes:
                 if not node in nmap:
                     # skip node
-                    k += 6
+                    k += ndofs
                     continue
                 
                 ndof = node.activeDofSet()
@@ -992,12 +994,12 @@ class FE(object):
                             
                     if ndof[j]:
                         continue
-                    
-                    node.reaction[j] += reaction[k]
+                        
+                    node.reaction[j] += reaction[k] - iforces[k]
                     
                     # update total reaction force
                     if j < 3:
-                        total[j] += reaction[k]
+                        total[j] += reaction[k] - iforces[k]
         
         return total
                     
