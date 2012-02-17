@@ -648,19 +648,29 @@ class Beam(BaseBeam):
             fac = -1.
         else:
             fac = 1.
-            
+        
         d = np.zeros((12,), dtype=float)
         d[:6] = n1.results
         d[6:] = n2.results
         
-        u = np.dot(T, d)
+        if not n1.coordSys is None:
+            Tcs = n1.coordSys.toMatrix()
+            d[:3] = np.dot(Tcs.T, d[:3])
+            d[3:6] = np.dot(Tcs.T, d[3:6])
         
+        if not n2.coordSys is None:
+            Tcs = n2.coordSys.toMatrix()
+            d[6:9] = np.dot(Tcs.T, d[6:9])
+            d[9:12] = np.dot(Tcs.T, d[9:12])
+            
+        u = np.dot(T, d)
+            
         # Stiffness matrix in local coordinates
         Ke = self.calcKe()
         
         # Calculate forces in local directions
         forces = np.dot(Ke, u)
-        
+            
         # Correct forces from eqivalent forces line loads
         iforces = self.calcLocalNodalForces()
         forces -= iforces
@@ -711,7 +721,7 @@ if __name__ == '__main__':
     class BeamFE(FE, PostProcess):
         pass
     
-    csys = CoordSys().fromEuler132(math.radians(-45.),0.,0.)
+    csys = CoordSys().fromEuler132(math.radians(45.),0.,0.)
     
     fixed = BoundCon(Dx=0.,Dy=0.,Dz=0.,Rx=0.,Ry=0.,Rz=0.)
     pinned = BoundCon(Dx=0.,Dy=0.,Dz=0.)
@@ -739,6 +749,6 @@ if __name__ == '__main__':
     fe.validate()
     fe.solve()
     
-    fe.printNodalDisp()
+    fe.printNodalDisp(globals=True)
     fe.printNodalForces(totals='YES')
-    fe.printElementSectionForces(dx=250.)
+    fe.printElementSectionForces(dx=25.)

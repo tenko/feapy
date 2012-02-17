@@ -492,43 +492,44 @@ class Element(object):
         '''
         rotated = []
         
-        for idx, node in enumerate(self.nodes):
+        for node in self.nodes:
             if not node.coordSys is None:
-                rotated.append((idx,node))
+                rotated.append(node)
         
         if rotated:
             # Create transformation matrix T, first as identity matrix
             T = np.eye(K.shape[0], dtype=float)
+            dofs =  self.dofSet.count()
             
-            for idx,node in rotated:
+            for idx,node in enumerate(rotated):
                 # TODO: Check for not allowed coordinate system rotations for 2D models
-            
+                
                 # Get rotation matrix of coord sys of this node
                 Tn = node.coordSys.toMatrix()
-                
+
                 # Inverse Tn
-                Tni = np.linalg.inv(Tn)
+                Tn = Tn.T
                 
                 # Eval first index of T to be modified
-                posT = idx * self.dofSet.count()
+                posT = idx * dofs
                 
                 # Replace vals of T with vals from Tni at appropriate places
-                
                 # number of DOF's of this element
-                dofs1 = self.dofSet.count()
+                dofs1 = dofs
+                
                 # number of DOF's for "first three DOF entries" of this element
                 dofs2 = min(dofs1, 3)
                 
                 # Replace vals for first three DOF's of actual node
                 for i in range(dofs2):
                     for j in range(dofs2):
-                        T[posT + i, posT + j] = Tni[i,j]
+                        T[posT + i, posT + j] = Tn[i,j]
                 
                 # Replace vals for second three DOF's of actual node
                 for i in range(3, dofs1):
                     for j in range(3, dofs1):
-                        T[posT + i, posT + j] = Tni[i - 3,j - 3]
-            
+                        T[posT + i, posT + j] = Tn[i - 3,j - 3]
+                
             # Eval transformation
             K = np.dot(T.T,np.dot(K,T))
                 
@@ -589,7 +590,7 @@ class Element(object):
         K = self.calcK()
         
         # Transform EM, if there are any rotated nodal coordinate systems
-        self.transformK(K)
+        K = self.transformK(K)
         
         # loop over lower triangle of symmetric K
         swapped = False
@@ -971,9 +972,10 @@ class FE(object):
                         resv[count + 1] = doft[1]
                         resv[count + 2] = doft[2]
                         count += 3
-            
+                    
             # reaction =  global Stiffnessmatrix * global DoF
             K = element.calcK()
+            
             reaction = np.dot(K, resv)
             
             # Correct forces from eqivalent forces line loads
@@ -988,15 +990,15 @@ class FE(object):
                     continue
                 
                 ndof = node.activeDofSet()
+                
                 for j in range(6):
                     if dofset[j]:
                         k += 1
                             
-                    if ndof[j]:
+                    if ndof[j] and node.coordSys is None:
                         continue
                         
                     node.reaction[j] += reaction[k] - iforces[k]
-                    
                     # update total reaction force
                     if j < 3:
                         total[j] += reaction[k] - iforces[k]
@@ -1012,10 +1014,15 @@ class FE(object):
             
 if __name__ == '__main__':
     cs = CoordSys().fromAxisAngle((0.,-1.,0.), math.radians(45.))
-    print cs
+    #print cs
     
     m = cs.toMatrix()
-    print m
+    #print m
     
-    print (1.,0.,0.) * m
+    v = (1,0,0)
+    print v
+    vr = np.dot(m,v)
+    print vr
     
+    mi = np.linalg.inv(m)
+    print np.dot(mi,vr)

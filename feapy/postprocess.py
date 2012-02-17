@@ -114,7 +114,7 @@ class PostProcess(object):
     def fileEnd(self, fh):
         print >>fh, " 9999\n"
         
-    def printNodalDisp(self, setname = None, fh = sys.stdout):
+    def printNodalDisp(self, setname = None, globals = False, fh = sys.stdout):
         '''
         Print nodal deformation to casename.dat
         '''
@@ -130,7 +130,7 @@ class PostProcess(object):
         print >>fh, msg % args
         print >>fh, ""
         
-        disp = self.nodalDisp(nset)
+        disp = self.nodalDisp(nset, globals)
         
         sset = sorted(nset)
         rows = len(sset)
@@ -147,7 +147,7 @@ class PostProcess(object):
         
         print >>fh, ""
         
-    def nodalDisp(self, nset = None):
+    def nodalDisp(self, nset = None, globals = False):
         '''
         Nodal deformation over set.
         
@@ -165,7 +165,12 @@ class PostProcess(object):
         for row in range(rows):
             node = self.nodes[sset[row]]
             
-            ret[row, :] = node.results[:3]
+            if globals and not node.coordSys is None:
+                # local -> global
+                T = node.coordSys.toMatrix()
+                ret[row, :] = np.dot(T.T, node.results[:3])
+            else:
+                ret[row, :] = node.results[:3]
         
         return ret
         
