@@ -1,4 +1,4 @@
-*HEADING Frame test - rotated beam section
+*HEADING Frame test - gravity loading
 **
 ** Node definitions
 **
@@ -7,8 +7,8 @@
 2,  0., 0., 100.
 3,  100., 0., 100.
 4,  100., 0., 0.
-*NSET, NSET=Nfix
-1, 4
+*NSET, NSET=NFix
+1,4
 **
 ** Element definitions
 **
@@ -21,23 +21,23 @@
 **
 *BEAM SECTION, SECTION=GENERAL, ELSET=Eall
 **      Ax      Ixx     Iyy     Izz     Ay      Az
-        10.,    100.,   200.,   300.
+        10.,    100.,   200.,   300.,   0.,     0.
 **      Nx      Ny      Nz
-        0.,      1.,      0.
-**      E       G       nu
-        30E6,   12E6,   0.4
+        0,      0,      1.
+**      E       G       nu      rho
+        30E6,   12E6,   0.4,    7850
 **
 ** Node 1 & 4 fixed
 **
 *BOUNDARY
-Nfix, 1, 6
+NFix, 1, 6
 **
-** Load case #1 - Global Z line load of -1000 per length unit
+** Load case #1 - self weight
 **
 *STEP
 *STATIC
 *DLOAD
-2,PZ,-1000
+Eall,GRAV,9.8152,0.,0.,-1.
 **
 ** Result selections
 **

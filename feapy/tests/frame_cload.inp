@@ -1,23 +1,36 @@
-*HEADING Frame test1 cload
+*HEADING Frame test - cload
+**
+** Node definitions
+**
 *NODE, NSET=Nall
 1,  0., 0., 0.
 2,  0., 0., 100.
 3,  100., 0., 100.
 4,  100., 0., 0.
+*NSET, NSET=NFix
+1,4
+**
+** Element definitions
+**
 *ELEMENT, TYPE=B31, ELSET=Eall
 1, 1, 2
 2, 2, 3
 3, 3, 4
+**
+** Beam sections
+**
 *BEAM SECTION, SECTION=GENERAL, ELSET=Eall
-10., 100., 200., 300.
-0, 0, 1.
-30E6, 12E6, 0.4
+**      Ax      Ixx     Iyy     Izz     Ay      Az
+        10.,    100.,   200.,   300.,   0.,     0.
+**      Nx      Ny      Nz
+        0,      0,      1.
+**      E       G       nu
+        30E6,   12E6,   0.4
 **
 ** Node 1 & 4 fixed
 **
 *BOUNDARY
-1, 1, 6
-4, 1, 6
+NFix, 1, 6
 **
 ** Load case #1 - Horisontal load of 5000 in node 2
 **
@@ -25,8 +38,13 @@
 *STATIC
 *CLOAD
 2,1,5000.
+**
+** Result selections
+**
 *NODE PRINT, TOTALS=YES, NSET=Nall
  U, RF
+*NODE PRINT, TOTALS=ONLY, NSET=NFix
+ RF
 *EL PRINT, ELSET=Eall
  SF
 *NODE FILE

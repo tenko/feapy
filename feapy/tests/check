@@ -12,10 +12,15 @@ import itertools
 def strip(s):
     return re.sub("\s+" , "", s)
     
-def main():
+def main(args):
     log = open('check.log', 'w')
     
-    for path in glob.glob('*.inp'):
+    if len(args):
+        files = args
+    else:
+        files = glob.glob('*.inp')
+        
+    for path in files:
         isOK = True
         
         filename = os.path.split(path)[-1]
@@ -99,4 +104,4 @@ def main():
             print >>log, "%s FAILED\n" % casename
         
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])

@@ -8,6 +8,9 @@ import os
 import glob
 
 if __name__ == '__main__':
+    if os.path.exists('spooles.out'):
+        os.remove('spooles.out')
+        
     if os.path.exists('check.log'):
         os.remove('check.log')
         
