@@ -1,7 +1,7 @@
 Introduction
 ============
 
-Simple linear static analysis of 3D frames and trusses.
+Simple linear static and modal analysis of 3D frames and trusses.
 
 feapy reads input files in a subset of the
 Calculix/Abaqus format and create results
@@ -21,9 +21,8 @@ numpy installation. Other python version have not been tested.
 
 Also for equation solving either:
 
- - Shipped solver wrapping the spooles solver.
+ - Shipped solver wrapping the spooles and arpack solver.
  - pysparse package compiled with the superlu solver.
- - scipy package (A bug in scipy prevent this currently from working)
 
 Later more of the numerical part of the code will be moved to faster
 compiled Cython based code and the dependency on numpy will be removed.
@@ -53,8 +52,10 @@ Keywords
  * MATERIAL Support only ELASTIC and DENSITY material definitions.
  * BEAM SECTION Support only special general section with given section properties.
  * BOUNDARY
+ * TRANSFORM
  * STEP
  * STATIC
+ * FREQUENCY
  * CLOAD Only structural dof's 1-6
  * DLOAD Support GRAV, PX, PY, PZ, P2, P3. 
    PX, PY & PZ are line loads in global direction (E.g N/m) and
