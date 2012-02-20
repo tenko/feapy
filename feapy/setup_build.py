@@ -10,7 +10,7 @@ import os
 
 from distutils.core import setup
 from distutils.extension import Extension
-#from Cython.Distutils import build_ext
+from Cython.Distutils import build_ext
 
 sys.argv.append('build_ext')
 sys.argv.append('--inplace')
@@ -29,11 +29,11 @@ try:
             #sources=["@src/solver.pyx", "@src/spooles.c"],
             sources=["@src/solver.c", "@src/spooles.c"],
             include_dirs = ["@src", r'/usr/include/spooles',],
-            libraries=["spoolesMT", "spooles", "pthread"],
+            libraries=["spoolesMT", "spooles", "arpack", "lapack", "blas", "pthread"],
             extra_compile_args = ["-DUSE_MT"],
         ),
         ],
-      #cmdclass = {'build_ext': build_ext}
+      cmdclass = {'build_ext': build_ext}
     )
 except:
     print('Traceback\n:%s\n' % str(sys.exc_info()[-2]))
