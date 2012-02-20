@@ -30,7 +30,7 @@ class test_Beam(unittest.TestCase):
         
         self.assertAlmostEqual(b1.length(), sqrt(200.))
         self.assertAlmostEqual(b1.volume(), 0.01*sqrt(200.))
-        self.assertTrue(b1.sizeOfK() == 12)
+        self.assertTrue(b1.sizeOfEM() == 12)
     
     def test_beam_transform(self):
         n1 = Node(0.,0.,0.)

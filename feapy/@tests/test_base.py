@@ -169,21 +169,3 @@ class test_BoundCon(Test):
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
     unittest.main()
-    '''
-    from base import Dx, Dy, Dz, Rx, Ry, Rz
-    from base import Fx, Fy, Fz, Mx, My, Mz
-    from base import DofSet, BoundCon
-    '''
-    
-    '''
-    load = BoundCon(Dx=0.01, Fz = 1000.)
-    print load
-    print load.activeLoads([None,]*12)
-    
-    del load[Dx]
-    print load
-    print load.activeLoads([None,]*12)
-    
-    load[Dx] = 0.01
-    print load
-    '''

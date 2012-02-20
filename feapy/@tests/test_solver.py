@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-#
 # This file is part of feapy - See LICENSE.txt
 #-
 import sys
@@ -36,10 +35,10 @@ class test_Solver(unittest.TestCase):
 
         rhs = np.array((1.,1.,1.,1.,1.), dtype=float)
         
-        spooles = solver.Spooles(dok, 2)
+        spooles = solver.Spooles(dok, 0)
         spooles.solve(rhs)
         
-        self.almostEqual(rhs, [0.2, 0.1, 0.05, 0.025, 0.0125])
+        self.almostEqual(rhs, [0.06666667, 0.06666667, 0.06666667, 0.06666667, 0.06666667])
 
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
