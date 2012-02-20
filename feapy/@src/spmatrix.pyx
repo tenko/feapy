@@ -2,6 +2,8 @@
 #
 # This file is part of feapy - See LICENSE.txt
 #
+from libc.stdlib cimport malloc, free
+from libc.string cimport memcpy, memset
 from cython cimport array
 
 cdef class DOK(dict):
@@ -20,8 +22,12 @@ cdef class DOK(dict):
     nnz
         Number of nonzero elements
     '''
-    def __init__(self, shape):
+    def __init__(self, shape, data = None):
         dict.__init__(self)
+        
+        if not data is None:
+            self.update(data)
+            
         self.shape = shape
         
     property nnz:
@@ -31,6 +37,10 @@ cdef class DOK(dict):
     property ndim:
         def __get__(self):
             return 2
+    
+    property dtype:
+        def __get__(self):
+            return float
             
     def  __getitem__(self, tuple key):
         cdef size_t row, col
@@ -88,8 +98,9 @@ cdef class DOK(dict):
             for col in range(cols):
                 if (row,col) in self:
                     s += self[row,col] * x[col]
-                elif isSym and (col,row) in self:
-                    s += self[col,row] * x[col]
+                elif isSym:
+                    if col > row and (col,row) in self:
+                        s += self[col,row] * x[col]
             
             y[row] += s
         
@@ -104,32 +115,22 @@ cdef class DOK(dict):
         """
         Return a copy of this matrix in COOrdinate format
         """
-        cdef COO ret = COO()
-        
-        ret.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
-        cdef double[:] data_view = ret.data
-        
-        ret.row = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        cdef int[:] row_view = ret.row
-        
-        ret.col = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        cdef int[:] col_view = ret.col
+        cdef COO ret = COO(None, self.nnz)
         
         cdef int i = 0
         cdef int rows = 0,cols = 0
         for key in sorted(self):
             value = self[key]
-            data_view[i] = value
+            ret.dataptr[i] = value
             
-            row_view[i] = key[0]
-            rows = max(row_view[i], rows)
+            ret.rowptr[i] = key[0]
+            rows = max(ret.rowptr[i], rows)
             
-            col_view[i] = key[1]
-            cols = max(col_view[i], cols)
+            ret.colptr[i] = key[1]
+            cols = max(ret.colptr[i], cols)
             
             i += 1
         
-        ret.nnz = self.nnz
         ret.shape = (rows + 1,cols + 1)
         
         return ret
@@ -157,18 +158,33 @@ cdef class COO:
     col
         COO format column index array of the matrix
     '''
+    def __init__(self, shape, int nnz = 0):
+        self.shape = shape
+        self.nnz = nnz
+        
+        if nnz > 0:
+            # create new empty array
+            self.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
+            self.dataptr = <double *>self.data.data
+            
+            self.row = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
+            self.rowptr = <int *>self.row.data
+            
+            self.col = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
+            self.colptr = <int *>self.col.data
+        
+    property dtype:
+        def __get__(self):
+            return float
+    
     property ndim:
         def __get__(self):
             return 2
     
     cdef matvec_(self, double *x, double *y):
-        cdef double[:] y_view, data_view = self.data
-        cdef int[:] row_view = self.row
-        cdef int[:] col_view = self.col
         cdef int i
-        
         for i in range(self.nnz):
-            y[row_view[i]] += data_view[i] * x[col_view[i]]
+            y[self.rowptr[i]] += self.dataptr[i] * x[self.colptr[i]]
     
     cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y):
         '''
@@ -179,45 +195,27 @@ cdef class COO:
     
     cpdef DOK toDOK(self, bint copy = True):
         cdef DOK ret = DOK(self.shape)
-        cdef double[:] y_view, data_view = self.data
-        cdef int[:] row_view = self.row
-        cdef int[:] col_view = self.col
         cdef int i
         
         for i in range(self.nnz):
-            ret[(row_view[i], col_view[i])] = data_view[i]
-            
+            ret[(self.rowptr[i], self.colptr[i])] = self.dataptr[i]
+        
         return ret
     
     cpdef COO toCOO(self, bint copy = True):
         """
         Return a copy of this matrix in COOrdinate format
         """
-        cdef double[:] data_view = self.data
-        cdef int[:] row_view = self.row
-        cdef int[:] col_view = self.col
-        cdef rows, cols
+        cdef COO ret
         
         if not copy:
             return self
-            
-        rows, cols = self.shape
-        ret = COO()
         
-        ret.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
-        cdef double[:] tmpd_view = ret.data
-        tmpd_view[:] = data_view
+        ret = COO(self.shape, self.nnz)
         
-        ret.row = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        cdef int[:] tmpi_view = ret.row
-        tmpi_view[:] = row_view
-        
-        ret.col = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        tmpi_view = ret.col
-        tmpi_view[:] = col_view
-        
-        ret.shape = rows, cols
-        ret.nnz = self.nnz
+        memcpy(ret.dataptr, self.dataptr, self.nnz * sizeof(double))
+        memcpy(ret.rowptr, self.rowptr, self.nnz * sizeof(int))
+        memcpy(ret.colptr, self.colptr, self.nnz * sizeof(int))
         
         return ret
         
@@ -225,52 +223,51 @@ cdef class COO:
         """
         Return a copy of this matrix in Compressed Sparse Row format
         """
-        cdef CSR ret = CSR()
-        
+        cdef CSR ret
         cdef int i, rows, cols
         rows, cols = self.shape
         
-        cdef double[:] data_view = self.data
-        cdef int[:] row_view = self.row
-        cdef int[:] col_view = self.col
+        if copy:
+            ret = CSR(self.shape, self.nnz)
+            memcpy(ret.ix, self.dataptr, self.nnz * sizeof(double))
         
-        ret.indptr = array(shape=(rows + 1,), itemsize=sizeof(int), format="i")
-        cdef int[:] indptr_view = ret.indptr
-        
-        ret.indices = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        cdef int[:] indices_view = ret.indices
-        
-        ret.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
-        cdef double[:] resdata_view = ret.data
+        else:
+            ret = CSR(self.shape)
+            ret.nnz = self.nnz
+            
+            # share data
+            ret.data = self.data
+            ret.ix = self.dataptr
+            
+            ret.indptr = array(shape=(rows + 1,), itemsize=sizeof(int), format="i")
+            ret.ia = <int *>ret.indptr.data
+            
+            ret.indices = array(shape=(ret.nnz,), itemsize=sizeof(int), format="i")
+            ret.ja = <int *>ret.indices.data
         
         # compute number of non-zero entries per row of A
-        indptr_view[:] = 0
+        memset(ret.ia, 0, (rows + 1) * sizeof(int))
         for i in range(self.nnz):
-            indptr_view[row_view[i]] += 1
+            ret.ia[self.rowptr[i]] += 1
         
         # cumsum the nnz per row to get Bp[]
         cdef int tmp, cumsum = 0
         for i in range(rows):
-            tmp = indptr_view[i]
-            indptr_view[i] = cumsum
+            tmp = ret.ia[i]
+            ret.ia[i] = cumsum
             cumsum += tmp
-        indptr_view[rows] = self.nnz
+        ret.ia[rows] = self.nnz
         
-        # write Aj,Ax into Bj,Bx
-        cdef int row, dest
+        cdef int row
         for i in range(self.nnz):
-            row = row_view[i]
-            dest = indptr_view[row]
-            
-            indices_view[dest] = col_view[i]
-            resdata_view[dest] = data_view[i]
-            
-            indptr_view[row] += 1
+            row = self.rowptr[i]
+            ret.ja[ret.ia[row]] = self.colptr[i]
+            ret.ia[row] += 1
         
         cdef int last = 0
         for i in range(rows + 1):
-            tmp = indptr_view[i]
-            indptr_view[i] = last
+            tmp = ret.ia[i]
+            ret.ia[i] = last
             last = tmp
         
         ret.shape = rows, cols
@@ -297,6 +294,25 @@ cdef class CSR:
     indptr
         CSR format index pointer array of the matrix
     '''
+    def __init__(self, shape, int nnz = 0):
+        self.shape = shape
+        self.nnz = nnz
+        
+        if nnz > 0:
+            # create new empty array
+            self.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
+            self.ix = <double *>self.data.data
+            
+            self.indptr = array(shape=(shape[0] + 1,), itemsize=sizeof(int), format="i")
+            self.ia = <int *>self.indptr.data
+            
+            self.indices = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
+            self.ja = <int *>self.indices.data
+    
+    property dtype:
+        def __get__(self):
+            return float
+            
     property ndim:
         def __get__(self):
             return 2
@@ -306,9 +322,6 @@ cdef class CSR:
         Multiply matrix with dense vector:
             y += M * x
         '''
-        cdef double[:] y_view, data_view = self.data
-        cdef int[:] indptr_view = self.indptr
-        cdef int[:] indices_view = self.indices
         cdef double tmp
         cdef int i, j, rows, cols
         
@@ -316,8 +329,8 @@ cdef class CSR:
         
         for i in range(rows):
             tmp = y[i]
-            for j in range(indptr_view[i], indptr_view[i + 1]):
-                tmp += data_view[j] * x[indices_view[j]]
+            for j in range(self.ia[i], self.ia[i + 1]):
+                tmp += self.ix[j] * x[self.ja[j]]
             y[i] = tmp
         
     cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y):
@@ -337,36 +350,31 @@ cdef class CSR:
         """
         Return a copy of this matrix in COOrdinate format
         """
-        cdef COO ret = COO()
-        cdef double[:] tmpd_view, data_view = self.data
-        cdef int[:] tmpi_view, indptr_view = self.indptr
-        cdef int[:] indices_view = self.indices
+        cdef COO ret
         cdef int i, j, rows, cols
-        
         rows, cols = self.shape
         
         if copy:
-            ret.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
-            tmpd_view = ret.data
-            tmpd_view[:] = data_view
-            
-            ret.col = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-            tmpi_view = ret.col
-            tmpi_view[:] = indices_view
+            ret = COO(self.shape, self.nnz)
+            memcpy(ret.dataptr, self.ix, self.nnz * sizeof(double))
+            memcpy(ret.colptr, self.ja, self.nnz * sizeof(int))
         else:
+            ret = COO(self.shape)
+            ret.nnz = self.nnz
+            
             ret.data = self.data
+            ret.dataptr = self.ix
+            
+            ret.row = array(shape=(ret.nnz,), itemsize=sizeof(int), format="i")
+            ret.rowptr = <int *>ret.row.data
+            
             ret.col = self.indices
-        
-        ret.row = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        tmpi_view = ret.row
+            ret.colptr = self.ja
         
         # Expand a compressed row pointer into a row array
         for i in range(rows):
-            for j in range(indptr_view[i], indptr_view[i + 1]):
-                tmpi_view[j] = i
-        
-        ret.shape = rows, cols
-        ret.nnz = self.nnz
+            for j in range(self.ia[i], self.ia[i + 1]):
+                ret.rowptr[j] = i
         
         return ret
     
@@ -374,30 +382,14 @@ cdef class CSR:
         """
         Return a copy of this matrix in Compressed Sparse Row format
         """
-        cdef CSR ret = CSR()
-        cdef double[:] tmpd_view, data_view = self.data
-        cdef int[:] tmpi_view, indptr_view = self.indptr
-        cdef int[:] indices_view = self.indices
-        cdef int rows, cols
+        cdef CSR ret
         
         if not copy:
             return self
-            
-        rows, cols = self.shape
         
-        ret.data = array(shape=(self.nnz,), itemsize=sizeof(double), format="d")
-        tmpd_view = ret.data
-        tmpd_view[:] = data_view
-        
-        ret.indices = array(shape=(self.nnz,), itemsize=sizeof(int), format="i")
-        tmpi_view = ret.indices
-        tmpi_view[:] = indices_view
-        
-        ret.indptr = array(shape=(self.shape[0] + 1,), itemsize=sizeof(int), format="i")
-        tmpi_view = ret.indptr
-        tmpi_view[:] = indptr_view
-        
-        ret.shape = rows, cols
-        ret.nnz = self.nnz
+        ret = CSR(self.shape, self.nnz)
+        memcpy(ret.ix, self.ix, self.nnz * sizeof(double))
+        memcpy(ret.ia, self.ia, (self.shape[0] + 1) * sizeof(int))
+        memcpy(ret.ja, self.ja, self.nnz * sizeof(int))
         
         return ret

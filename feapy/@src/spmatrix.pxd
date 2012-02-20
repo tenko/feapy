@@ -6,7 +6,7 @@ from cython cimport array
 
 cdef class DOK(dict):
     cdef readonly tuple shape
-
+    
     cdef matvec_(self, double *x, double *y, bint isSym = ?)
     cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y, bint isSym = ?)
     
@@ -16,8 +16,14 @@ cdef class DOK(dict):
 
 cdef class COO:
     cdef public array data
+    cdef double *dataptr
+    
     cdef public array row
+    cdef int *rowptr
+    
     cdef public array col
+    cdef int *colptr
+    
     cdef readonly int nnz
     cdef readonly tuple shape
     
@@ -30,8 +36,14 @@ cdef class COO:
 
 cdef class CSR:
     cdef public array data
+    cdef double *ix
+    
     cdef public array indptr
+    cdef int *ia
+    
     cdef public array indices
+    cdef int *ja
+    
     cdef readonly int nnz
     cdef readonly tuple shape
     
