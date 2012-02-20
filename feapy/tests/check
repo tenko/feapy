@@ -36,16 +36,16 @@ def main(args):
         os.system("../feapy %s" % casename)
         
         # check if files are created
-        exts = ('.dat', '.frd')
-        for ext in ('.dat', '.frd'):
-            if not os.path.exists(casename + ext):
-                if not os.path.exists(casename + '.sec'):
-                    args = casename, ext
-                    print >>log, "ERROR %s: file %s not created" % args
-                    isOK = False
-                else:
-                    exts = ('.sec',)
+        exts = []
+        hasFiles = False
+        for ext in ('.dat', '.frd', '.sec'):
+            if os.path.exists(casename + ext):
+                exts.append(ext)
         
+        if not exts:
+            isOK = False
+            print >>log, "%s : NO FILES CREATED" % casename
+            
         # check if content of files are similar
         for ext in exts:
             content = open(casename + ext).read()

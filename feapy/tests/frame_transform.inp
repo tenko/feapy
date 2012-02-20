@@ -1,0 +1,64 @@
+*HEADING Frame test - transformed node
+**
+** Node definitions
+**
+*NODE, NSET=Nall
+1,  0., 0., 0.
+2,  50., 0., 50.
+3,  100., 0., 50.
+4,  100., 0., 0.
+*NSET, NSET=NFix
+1,4
+*NSET, NSET=NRot
+1
+**
+** Element definitions
+**
+*ELEMENT, TYPE=B31, ELSET=Eall
+1, 1, 2
+2, 2, 3
+3, 3, 4
+**
+** Beam sections
+**
+*BEAM SECTION, SECTION=GENERAL, ELSET=Eall
+**      Ax      Ixx     Iyy     Izz     Ay      Az
+        10.,    100.,   200.,   300.,   0.,     0.
+**      Nx      Ny      Nz
+        0,      0,      1.
+**      E       G       nu
+        30E6,   12E6,   0.4
+**
+** Node 1 support in beam local x direction
+**
+*BOUNDARY
+1, 1
+**
+** Node 4 fixed
+**
+*BOUNDARY
+4, 1, 6
+**
+** Node 1 rotated to match element local x axis
+**
+*TRANSFORM, NSET=NRot
+1., 0., 1., 1., -1., 1.
+**
+** Load case #1 - Global Z line load of -1000 per length unit
+**
+*STEP
+*STATIC
+*DLOAD
+2,PZ,-1000
+**
+** Result selections
+**
+*NODE PRINT, TOTALS=YES, NSET=Nall
+ U, RF
+*NODE PRINT, TOTALS=ONLY, NSET=NFix
+ RF
+*EL PRINT, SECTIONDELTA=25, ELSET=Eall
+ SF
+*NODE FILE
+ U, RF
+*END STEP
