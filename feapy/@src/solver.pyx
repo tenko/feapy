@@ -49,6 +49,7 @@ def arpack_factor(DOK K, DOK M):
     
 def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter = -1):
     cdef Spooles factor
+    cdef COO Mv = M.toCOO()
     cdef array ret
     cdef double *resid, *workd, *workl, *z, *tmp, *d, sigma
     cdef char *bmat, *which, *howmny 
@@ -133,7 +134,7 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
                 tmp[row] = 0.
             
             if ido == -1:
-                M.matvec_(&workd[ipntr[0] - 1], tmp, True)
+                Mv.matvec_(&workd[ipntr[0] - 1], tmp, True)
                 factor.solve_(tmp)
                     
             elif ido == 1:
@@ -143,7 +144,7 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
                 factor.solve_(tmp)
                 
             elif ido == 2:
-                M.matvec_(&workd[ipntr[0] - 1], tmp, True)
+                Mv.matvec_(&workd[ipntr[0] - 1], tmp, True)
             
             elif ido == 99:
                 break

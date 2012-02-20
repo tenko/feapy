@@ -27,8 +27,8 @@ cdef class COO:
     cdef readonly int nnz
     cdef readonly tuple shape
     
-    cdef matvec_(self, double *x, double *y)
-    cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y)
+    cdef matvec_(self, double *x, double *y, bint isSym = ?)
+    cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y, bint isSym = ?)
     
     cpdef DOK toDOK(self, bint copy = ?)
     cpdef COO toCOO(self, bint copy = ?)

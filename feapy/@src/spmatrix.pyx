@@ -181,17 +181,25 @@ cdef class COO:
         def __get__(self):
             return 2
     
-    cdef matvec_(self, double *x, double *y):
-        cdef int i
+    cdef matvec_(self, double *x, double *y, bint isSym = False):
+        cdef int i, row, col
+        
         for i in range(self.nnz):
             y[self.rowptr[i]] += self.dataptr[i] * x[self.colptr[i]]
+        
+        if isSym:
+            for i in range(self.nnz):
+                row = self.rowptr[i]
+                col = self.colptr[i]
+                if row != col:
+                    y[col] += self.dataptr[i] * x[row]
     
-    cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y):
+    cpdef matvec(self, object[double, ndim=1] x, object[double, ndim=1] y, bint isSym = False):
         '''
         Multiply matrix with dense vector:
             y += M * x
         '''
-        self.matvec_(&x[0], &y[0])
+        self.matvec_(&x[0], &y[0], isSym)
     
     cpdef DOK toDOK(self, bint copy = True):
         cdef DOK ret = DOK(self.shape)
