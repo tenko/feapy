@@ -18,13 +18,8 @@ except ImportError:
         from pysparse import spmatrix, superlu
         SOLVER = 'superlu'
     except ImportError:
-        try:
-            from scipy.sparse import dok_matrix
-            from scipy.sparse.linalg import splu
-            SOLVER = 'scipy.superlu'
-        except ImportError:
-            raise ImportError("sparse matrix solver not available")
-            
+        raise ImportError("sparse matrix solver not available")
+
 TINY = 1e-36
 
 # dof & boundary condition types
@@ -70,133 +65,55 @@ class List(list):
     
     def index(self, arg):
         return list.index(arg) + 1
+
+class Transform(np.ndarray):
+    def __new__(cls):
+        obj = np.ndarray.__new__(cls, (3,3), dtype=float)
+        return obj
+    
+    @classmethod
+    def carthesian(cls, a, b):
+        '''
+        Create transformation matrix for
+        a carthesian coordinate system
+        defined by two non-orthogonal points.
+        '''
+        ret = cls()
         
-class CoordSys(object):
-    '''
-    Class defining a cartesian coordinate system
-    by a quaternion rotation.
-    
-    http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions
-    http://en.wikipedia.org/wiki/Rotation_matrix
-    '''
-    def __init__(self):
-        self.w = 1.
-        self.x = 0.
-        self.y = 0.
-        self.z = 0.
-    
-    def __repr__(self):
-        args = self.w, self.x, self.y, self.z
-        return '(w = %g, x = %g, y = %g, z = %g)' % args
-    
-    def __str__(self):
-        return '%s%s' % (self.__class__.__name__, repr(self))
-    
-    def __getitem__(self, key):
-        if key == 0:
-            return self.w
-        elif key == 1:
-            return self.x
-        elif key == 2:
-            return self.y
-        elif key == 3:
-            return self.z
-        raise IndexError('index out of range')
-    
-    def __len__(self):
-        return 4
-    
-    def __mul__(self, other):
-        ret = CoordSys()
+        ax, ay, az = a
+        bx, by, bz = b
         
-        ret.w = self.w*other.w - self.x*other.x - self.y*other.y - self.z*other.z
-        ret.x = self.w*other.x + self.x*other.w + self.y*other.z - self.z*other.y
-        ret.y = self.w*other.y + self.y*other.w + self.z*other.x - self.x*other.z
-        ret.z = self.w*other.z + self.z*other.w + self.x*other.y - self.y*other.x
+        # normalize a
+        dd = math.sqrt(ax**2 + ay**2 + az**2)
+        ax /= dd
+        ay /= dd
+        az /= dd
+        
+        # dd = dot(a,b)
+        dd =ax*bx +  ay*by + az*bz
+        
+        # b = b - dd*a
+        bx = bx - dd*ax
+        by = by - dd*ay
+        bz = bz - dd*az
+        
+        # normalize b
+        dd = math.sqrt(bx**2 + by**2 + bz**2)
+        bx /= dd
+        by /= dd
+        bz /= dd
+        
+        # c = a x b
+        cx = ay*bz - az*by
+        cy = az*bx - ax*bz
+        cz = ax*by - ay*bx
+        
+        ret[0,:] = ax, ay, az
+        ret[1,:] = bx, by, bz
+        ret[2,:] = cx, cy, cz
         
         return ret
-    
-    def __imul__(self, other):
-        w = self.w*other.w - self.x*other.x - self.y*other.y - self.z*other.z
-        x = self.w*other.x + self.x*other.w + self.y*other.z - self.z*other.y
-        y = self.w*other.y + self.y*other.w + self.z*other.x - self.x*other.z
-        z = self.w*other.z + self.z*other.w + self.x*other.y - self.y*other.x
         
-        self.w = w
-        self.x = x
-        self.y = y
-        self.z = z
-        
-        return self
-    
-    def toMatrix(self):
-        '''
-        Create 3x3 rotation matrix from quaternion
-        '''
-        ret = np.zeros((3,3), dtype=float)
-        
-        Nq = self.w**2 + self.x**2 + self.y**2 + self.z**2
-        if Nq > 0.:
-            s = 2./Nq
-        else:
-            s = 0.
-        
-        X = self.x*s;   Y = self.y*s;   Z = self.z*s
-        wX = self.w*X;  wY = self.w*Y;  wZ = self.w*Z
-        xX = self.x*X;  xY = self.x*Y;  xZ = self.x*Z
-        yY = self.y*Y;  yZ = self.y*Z;  zZ = self.z*Z
-
-        ret[0,0] = 1.0-(yY+zZ)
-        ret[0,1] = xY-wZ
-        ret[0,2] = xZ+wY
-        
-        
-        ret[1,0] = xY+wZ
-        ret[1,1] = 1.0-(xX+zZ)
-        ret[1,2] = yZ-wX
-        
-        ret[2,0] = xZ-wY
-        ret[2,1] = yZ+wX
-        ret[2,2] = 1.0-(xX+yY)
-        return ret
-    
-    def fromAxisAngle(self, axis, angle):
-        angle = .5 * angle
-        
-        # normalize vector
-        ll = math.sqrt(axis[0]**2 + axis[1]**2 + axis[2]**2)
-        ax = axis[0]/ll
-        ay = axis[1]/ll
-        az = axis[2]/ll
-        
-        self.w = math.cos(angle)
-        
-        s = math.sin(angle)
-        self.x = ax * s
-        self.y = ay * s
-        self.z = az * s
-        
-        return self
-    
-    def fromEuler132(self, heading, attitude, bank):
-        heading /= 2.
-        attitude /= 2.
-        bank /= 2.
-        
-        c1 = math.cos(heading)
-        s1 = math.sin(heading)
-        c2 = math.cos(attitude)
-        s2 = math.sin(attitude)
-        c3 = math.cos(bank)
-        s3 = math.sin(bank)
-        
-        self.w = c1 * c2 * c3 - s1 * s2 * s3
-        self.x = s1 * s2 * c3 + c1 * c2 * s3
-        self.y = s1 * c2 * c3 + c1 * s2 * s3
-        self.z = c1 * s2 * c3 - s1 * c2 * s3
-        
-        return self
-
 class Material(dict):
     pass
     
@@ -465,9 +382,9 @@ class Element(object):
     def __repr__(self):
         return '%s%s' % (self.__class__.__name__, str(self))
         
-    def sizeOfK(self):
+    def sizeOfEM(self):
         '''
-        Returns the size of the element stiffnes matrix.
+        Returns the size of the element matrix.
         '''
         return self.dofSet.count() * self.nodeCount
         
@@ -485,7 +402,7 @@ class Element(object):
         for node in self.nodes:
             node.dofSet |= self.dofSet
     
-    def transformK(self, K):
+    def transformEM(self, K):
         '''
         Transform element matrix (EM), if any nodes of this element
         have rotated coord systems.
@@ -505,7 +422,7 @@ class Element(object):
                 # TODO: Check for not allowed coordinate system rotations for 2D models
                 
                 # Get rotation matrix of coord sys of this node
-                Tn = node.coordSys.toMatrix()
+                Tn = node.coordSys
 
                 # Inverse Tn
                 Tn = Tn.T
@@ -590,11 +507,11 @@ class Element(object):
         K = self.calcK()
         
         # Transform EM, if there are any rotated nodal coordinate systems
-        K = self.transformK(K)
+        K = self.transformEM(K)
         
         # loop over lower triangle of symmetric K
         swapped = False
-        for i in range(self.sizeOfK()):
+        for i in range(self.sizeOfEM()):
             # nodenr in this element
             nodenr = int(i / dofsize)
             # dofnr-th DOF is looked at right now
@@ -631,18 +548,75 @@ class Element(object):
                 if swapped:
                     swapped = False
                     col,row = row,col
-
+    
+    def assembleElementM(self, GM, lumped = False):
+        '''
+        Implementation of Assembly of one element into global structure
+        '''
+        dofset = self.dofSet
+        dofsize = dofset.count()
+        
+        # Evaluate mass matrix of element
+        M = self.calcM(lumped)
+        
+        # Transform EM, if there are any rotated nodal coordinate systems
+        M = self.transformEM(M)
+        
+        # loop over lower triangle of symmetric M
+        swapped = False
+        for i in range(self.sizeOfEM()):
+            # nodenr in this element
+            nodenr = int(i / dofsize)
+            # dofnr-th DOF is looked at right now
+            dofnr  = i % dofsize + 1
+            # this corresponds to dofpos (x,y,z,rx,ry,rz)
+            dofpos = dofset.dofPos(dofnr)
+            # Get appropriate globMat row
+            row = self.nodes[nodenr].indexGM(dofpos)
+            # If considered DOF is active (else row = -1)
+            if row < 0:
+                continue
+                
+            # loop over lower triangle of symmetric M
+            for j in range(i + 1):
+                # nodenr in this element
+                nodenr = int(j / dofsize)
+                # dofnr-th DOF is looked at right now
+                dofnr  = j % dofsize + 1
+                # this corresponds to dofpos (x,y,z,rx,ry,rz)
+                dofpos = dofset.dofPos(dofnr)
+                # Get appropriate globMat row
+                col = self.nodes[nodenr].indexGM(dofpos)
+                # If considered DOF is active (else col= -1)
+                if col < 0:
+                    continue
+                # if considered dof is located in upper half of globMat, swap indices
+                if col > row:
+                    swapped = True
+                    col,row = row,col
+                
+                # Add K(i,j) to globMat
+                GM[row,col] += M[i,j]
+                
+                
+                if swapped:
+                    swapped = False
+                    col,row = row,col
 class FE(object):
     def __init__(self, nodes = None, elements = None):
         self.nodes = List()
         self.elements = List()
         
+        self.GK = None
         self.GM = None
         self.step = 0
         self.dofcount = 0
         self.envelope = None
         self.nodalforces = None
         self.elementforces = None
+        
+        self.ev = None
+        self.evec = None
         
         if not nodes is None:
             self.nodes.extend(nodes)
@@ -704,7 +678,7 @@ class FE(object):
         self.applyLoads()
         
         # solve
-        self.directSolver()
+        self.staticSolver()
         
         # store deformation in nodes
         self.storeNodalResults()
@@ -754,24 +728,40 @@ class FE(object):
     
     def assembleElementK(self):
         '''
-        Assembly: Evaluate element matrix and fill GM.
+        Assembly: Evaluate element stiffness matrix and fill GM.
         '''
         # Eval envelope and profile of GSM
         profile = self.evalEnvelope()
         
         # Evaluate ESM's and assemble them to GSM
         if SOLVER == 'spooles':
-            self.GM = spmatrix.DOK()
+            self.GK = spmatrix.DOK((self.dofcount,self.dofcount))
         elif SOLVER == 'superlu':
-            self.GM = spmatrix.ll_mat_sym(self.dofcount, profile)
-        elif SOLVER == 'scipy.superlu':
-            self.GM = dok_matrix((self.dofcount,self.dofcount))
+            self.GK = spmatrix.ll_mat_sym(self.dofcount, profile)
         else:
             raise FEError('unknown solver')
             
         for element in self.elements:
-            element.assembleElementK(self.GM)
+            element.assembleElementK(self.GK)
     
+    def assembleElementM(self):
+        '''
+        Assembly: Evaluate element mass matrix and fill GM.
+        '''
+        # Eval envelope and profile of GSM
+        profile = self.evalEnvelope()
+        
+        # Evaluate ESM's and assemble them to GSM
+        if SOLVER == 'spooles':
+            self.GM = spmatrix.DOK((self.dofcount,self.dofcount))
+        elif SOLVER == 'superlu':
+            self.GM = spmatrix.ll_mat_sym(self.dofcount, profile)
+        else:
+            raise FEError('unknown solver')
+            
+        for element in self.elements:
+            element.assembleElementM(self.GM)
+            
     def applyLoads(self):
         '''
         Apply homogeonous boundary conditions.
@@ -807,17 +797,17 @@ class FE(object):
                     for j in range(len(forces)):
                         if j < idx and envelope[idx] > idx - j:
                             # upper triangle
-                            forces[j] -= load * self.GM[idx,j]
-                            self.GM[idx,j] = 0.
+                            forces[j] -= load * self.GK[idx,j]
+                            self.GK[idx,j] = 0.
                         elif envelope[j] > j - idx:
                             # lower triangle
-                            forces[j] -= load * self.GM[j,idx]
-                            self.GM[j,idx] = 0.
+                            forces[j] -= load * self.GK[j,idx]
+                            self.GK[j,idx] = 0.
                     
                     # for the actual force value:
                     forces[idx] = load
                     # for globMat(gsmindex, gsmindex)
-                    self.GM[idx,idx] = 1.
+                    self.GK[idx,idx] = 1.
         
         # check for element loads
         for element in self.elements:
@@ -839,26 +829,59 @@ class FE(object):
                         continue
                     
                     forces[idx] += nodeloads[i*dofsize + dof]
+    
+    def modalSolver(self, nev = 3):
+        if SOLVER == 'spooles':
+            print >>sys.stderr, "The arpack solver using spooles factoring"
+            print >>sys.stderr, "does currently not work correctly"
+            print >>sys.stderr, "revert to use pysparse"
         
-    def directSolver(self):
+        from pysparse import jdsym, itsolvers, precon, spmatrix
+        
+        # copy matrixes
+        GK = self.GK
+        A = spmatrix.ll_mat_sym(self.dofcount, len(GK))
+        for row, col in GK:
+            A[row,col] = GK[row,col]
+        
+        GM = self.GM
+        M = spmatrix.ll_mat_sym(self.dofcount, len(GM))
+        for row, col in GM:
+            M[row,col] = GM[row,col]
+        
+        # Atau = A + tau*M
+        tau = -1.0
+        Atau = A.copy()
+        Atau.shift(tau, M)
+        K = precon.jacobi(Atau)
+        
+        # convert to skyline
+        A = A.to_sss()
+        M = M.to_sss()
+        
+        # solve
+        k_conv, lmbd, Q, it, it_innser  =  \
+            jdsym.jdsym(A, M, K, nev, tau,
+                        1e-4, 4*self.dofcount, itsolvers.qmrs,
+                        jmin=5, jmax=10, clvl=0, strategy=1)
+        
+        # eigen values
+        return lmbd
+            
+    def staticSolver(self):
         self.solution = np.zeros((self.dofcount,), dtype=float)
         forces = self.nodalforces
         
         if SOLVER == 'spooles':
-            spooles = solver.Spooles(self.GM, symflag = 0)
+            spooles = solver.Spooles(self.GK, symflag = 0)
             self.solution[:] = forces
             spooles.solve(self.solution)
 
         elif SOLVER == 'superlu':
-            mat = self.GM.to_csr()
+            mat = self.GK.to_csr()
             LU = superlu.factorize(mat, permc_spec=2, diag_pivot_thresh=0.)
             LU.solve(forces, self.solution)
         
-        elif SOLVER == 'scipy.superlu':
-            mat = self.GM.tocsr()
-            lu = splu(mat, permc_spec=2, diag_pivot_thresh=0.,options = dict(SymmetricMode = True))
-            self.solution = lu.solve(forces)
-            print >>sys.stderr, "ERROR: Scipy fails due to error in superlu interface"
         else:
             raise FEError('unknown solver')
         
@@ -935,7 +958,7 @@ class FE(object):
                             dof[i] = 0.
                     
                     # Get rotation matrix for this node
-                    T = node.coordSys.toMatrix()
+                    T = node.coordSys
                     
                     # Transform local DoF in Global DoF for ux, uy and uz
                     doft = np.dot(T.T, dof)
@@ -1011,18 +1034,12 @@ class FE(object):
         '''
         for node in self.nodes:
             node.storeResults(self.solution)
-            
+
 if __name__ == '__main__':
-    cs = CoordSys().fromAxisAngle((0.,-1.,0.), math.radians(45.))
-    #print cs
+    m = Transform.carthesian((1,0,1), (1,-1,1))
+    print m
     
-    m = cs.toMatrix()
-    #print m
-    
-    v = (1,0,0)
+    v = np.dot(m, (1.,0.,0.))
     print v
-    vr = np.dot(m,v)
-    print vr
+    print np.dot(m.T, v)
     
-    mi = np.linalg.inv(m)
-    print np.dot(mi,vr)

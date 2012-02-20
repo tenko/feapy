@@ -10,7 +10,8 @@ import StringIO
 
 import numpy as np
 
-from base import FE, NonStructualElement, Element, Node, BoundCon
+from base import FE, NonStructualElement, Element, Node
+from base import BoundCon, Transform
 from base import LineLoad, globalX, globalY, globalZ, TINY
 from beam import Beam, Truss, SectionTriangle
 from postprocess import PostProcess
@@ -76,6 +77,7 @@ class Parser(FE, PostProcess):
         self.casename = os.path.splitext(filename)[0]
         
         self.analysis = None
+        self.apar = {}
         self.step = 0
         self.includelevel = 0
         self.matidx = 1
@@ -170,9 +172,16 @@ class Parser(FE, PostProcess):
             elif line.keyword == '*BOUNDARY':
                 line = self.handleBOUNDARY(fh, line)
             
+            elif line.keyword == '*TRANSFORM':
+                line = self.handleTRANSFORM(fh, line)
+                
             elif line.keyword == '*STEP':
                 line = self.handleSTEP(fh, line)
             
+            elif line.keyword == '*FREQUENCY':
+                self.analysis = 'FREQUENCY'
+                line = self.handleFREQUENCY(fh, line)
+                
             elif line.keyword == '*STATIC':
                 self.analysis = 'STATIC'
                 line = self.nextline(fh)
@@ -628,7 +637,7 @@ class Parser(FE, PostProcess):
                     
                     # optional density
                     if len(line.parts) == 4:
-                        mat['density'] = self.parse_float(line.parts[3], minimum = TINY)
+                        mat['Density'] = self.parse_float(line.parts[3], minimum = TINY)
                 
                 else:
                     raise ParserError(line, '*BEAM SECTION definition malformed!')
@@ -722,7 +731,38 @@ class Parser(FE, PostProcess):
         self._postfh = StringIO.StringIO()
         
         return self.nextline(fh)
-
+    
+    def handleTRANSFORM(self, fh, line):
+        nset = None
+        for part in line.parts:
+            part = part.upper()
+            if part.startswith("NSET="):
+                _, nset = part.split("=")
+            
+            elif part.startswith("TYPE="):
+                _, csys = part.split("=")
+                if csys != 'R':
+                    raise ParserError(line, 'Only rectangular (R) system supported')
+            else:
+                raise ParserError(line, '*TRANSFORM definition malformed!')
+        
+        if nset is None or nset not in self.nset:
+            raise FEError("NSET not valid or not defined")
+        
+        # fetch next line
+        line = self.nextline(fh)
+        if line.keyword or line is EmptyLine:
+            raise ParserError(line, 'Expected *TRANSFORM definitions!')
+        
+        ax, ay, az, bx, by, bz = map(float, line.parts)
+        csys = Transform.carthesian((ax, ay, az), (bx, by, bz))
+        
+        for nid in self.nset[nset]:
+            node = self.nodemap[nid]
+            node.coordSys = csys
+        
+        return line
+        
     def handleDLOAD(self, fh, line):
         for part in line.parts:
             part = part.upper()
@@ -973,7 +1013,6 @@ class Parser(FE, PostProcess):
             # fetch next line
             line = self.nextline(fh)
             
-            pfh = self.printfh
             for arg in line.parts:
                 if arg == 'SF':
                     self.printElementSectionForces(elset, dx, self.printfh)
@@ -985,9 +1024,32 @@ class Parser(FE, PostProcess):
                     raise FEError("Key '%s' not known" % arg)
                     
         return self.nextline(fh)
+    
+    def handleFREQUENCY(self, fh, line):
+        fmin, fmax = '0', 'inf'
         
+        # fetch next line
+        line = self.nextline(fh)
+        if line.keyword or line is EmptyLine:
+            msg = 'Expected *FREQUENCY definitions!'
+            raise ParserError(line, msg)
+        
+        ll = len(line.parts)
+        if ll == 1:
+            nev = line.parts[0]
+        elif ll == 3:
+            nev, fmin, fmax = line.parts
+        else:
+            raise ParserError(line, '*FREQUENCY definition malformed!')
+        
+        self.apar['nev'] = self.parse_int(nev, minimum = 1)
+        self.apar['fmin'] = self.parse_float(fmin, minimum = 0.)
+        self.apar['fmax'] = self.parse_float(fmax, minimum = 0.)
+        
+        return self.nextline(fh)
+    
     def handleENDSTEP(self, fh, line):
-        if self.analysis != 'STATIC':
+        if not self.analysis in ('STATIC', 'FREQUENCY'):
             raise FEError("Analysis '%s' not supported" % self.analysis)
             
         if self.step == 1:
@@ -1034,17 +1096,27 @@ class Parser(FE, PostProcess):
         print >>sys.stdout, "Nonzero matrix elements: %d" % np.sum(self.envelope)
         print >>sys.stdout, ""
         
-        # Evaluate ESM's and assemble them to GSM
+        # Evaluate element stiffness matrix and assemble them to global
         self.assembleElementK()
         
-        # Apply nodal loads
-        self.applyLoads()
-        
-        # solve
-        self.directSolver()
-        
-        # store deformation in nodes
-        self.storeNodalResults()
+        if self.analysis == 'FREQUENCY':
+            # Evaluate element mass matrix and assemble them to global
+            self.assembleElementM()
+            
+            ev = self.modalSolver(self.apar['nev'])
+            
+            fmin, fmax = self.apar['fmin'], self.apar['fmax']
+            self.printFrequency(ev, fmin, fmax, self.printfh)
+            
+        else:
+            # Apply nodal loads
+            self.applyLoads()
+            
+            # solve
+            self.staticSolver()
+            
+            # store deformation in nodes
+            self.storeNodalResults()
         
         # post process results
         if self._postfh.getvalue():
@@ -1090,9 +1162,10 @@ class Parser(FE, PostProcess):
         return value
         
 if __name__ == '__main__':
-    fe = Parser('frame_rotated_section.inp')
-    #os.chdir('tests')
-    #fe = Parser('frame_tower.inp')
+    print os.getcwd()
+    #fe = Parser('modal.inp')
+    os.chdir('tests')
+    fe = Parser('frame_grav.inp')
     
     #fe.printNodalDisp()
     #fe.printNodalForces(totals='YES')

@@ -4,6 +4,7 @@
 #
 import sys
 import datetime
+import math
 
 import numpy as np
 
@@ -101,7 +102,7 @@ class PostProcess(object):
         print >>fh, " -5  D3          1    2    3    0"
         print >>fh, " -5  ALL         1    2    0    0    1ALL"
 
-        disp = self.nodalDisp()
+        disp = self.nodalDisp(globals = True)
         
         for nid in range(1, len(self.nodes) + 1):
             ux,uy,uz = disp[nid - 1,:]
@@ -167,7 +168,7 @@ class PostProcess(object):
             
             if globals and not node.coordSys is None:
                 # local -> global
-                T = node.coordSys.toMatrix()
+                T = node.coordSys
                 ret[row, :] = np.dot(T.T, node.results[:3])
             else:
                 ret[row, :] = node.results[:3]
@@ -416,3 +417,28 @@ class PostProcess(object):
             Izz += izz
         
         return Ax, Iyy + Izz, Iyy, Izz
+    
+    def printFrequency(self, ev, fmin, fmax, fh = sys.stdout):
+        print >>fh, '    E I G E N V A L U E   O U T P U T'
+        print >>fh, 'MODE NO    EIGENVALUE                       FREQUENCY'
+        print >>fh, '                                    REAL PART          IMAGINARY PART'
+        print >>fh, '                          (RAD/TIME)      (CYCLES/TIME)   (RAD/TIME)'
+
+        i = 1
+        k = 2.*math.pi
+        for val in ev:
+            if val < fmin**2 or val > fmax**2:
+                continue
+            
+            if val < 0.:
+                args = i, val, 0., 0., math.sqrt(-val)
+            else:
+                args = i, val, math.sqrt(val), math.sqrt(val)/k, 0.
+            
+            print >>fh, "%7d  %14.7E  %14.7E  %14.7E  %14.7E" % args
+            
+            i += 1
+
+        print   >>fh, ""
+
+        

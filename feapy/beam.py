@@ -155,10 +155,10 @@ class BaseBeam(Element):
         nx, ny, nz = gravity vector direction
         '''
         
-        if 'density' not in self.material:
+        if 'Density' not in self.material:
             raise FEError('Material density not defined')
             
-        density = self.material['density']
+        density = self.material['Density']
         mass = self.volume()*density
         weight = magnitude*mass/self.length()
         
@@ -360,6 +360,64 @@ class Truss(BaseBeam):
         
         return res
     
+    def calcM(self, lumped = False):
+        '''
+        Eval elemenent consistent mass matrix in global coordinates
+        '''
+        mat = self.material
+        prop = self.properties
+        
+        Ax, rho = prop["Area"], mat['Density']
+        n1, n2 = self.nodes
+        L = self.length()
+        
+        # Eval direction cosines in order to transform stiffness matrix
+        # from local coords (link direction) to global coordinates
+        cxx = ( n2.cx - n1.cx ) / L
+        cxy = ( n2.cy - n1.cy ) / L
+        cxz = ( n2.cz - n1.cz ) / L
+        
+        ll = sqrt(cxx**2 + cxy**2)
+        if ll != 0.:
+            cyx = -cxy/ll 
+            cyy = cxx/ll
+            cyz = 0.
+        else:
+            cyx = 0.
+            cyy = 1.
+            cyz = 0.
+        
+        czx = cxy*cyz - cxz*cyy;
+        czy = -cxx*cyz + cxz*cyx;
+        czz = cxx*cyy - cxy*cyx;
+        
+        # Transforamtion matrix
+        T = np.zeros((6,6), dtype=float)
+        
+        T[0,0] = cxx; T[0,1] = cxy; T[0,2] = cxz
+        T[1,0] = cyx; T[1,1] = cyy; T[1,2] = cyz
+        T[2,0] = czx; T[2,1] = czy; T[2,2] = czz
+
+        T[3,3] = cxx; T[3,4] = cxy; T[3,5] = cxz
+        T[4,3] = cyx; T[4,4] = cyy; T[4,5] = cyz
+        T[5,3] = czx; T[5,4] = czy; T[5,5] = czz
+        
+        # Mass matrix
+        M = np.zeros((6,6), dtype=float)
+        
+        if lumped:
+            M[0,0] = 1.; M[5,5] =  1.
+            M *= rho * Ax * L / 2.
+        else:
+            M[0,0] = 2.; M[1,1] =  2.; M[2,2] =  2.
+            M[3,3] = 2.; M[4,4] =  2.; M[5,5] =  2.
+            M[3,0] = 1.; M[4,1] =  1.; M[5,2] =  1.
+            M[0,3] = 1.; M[1,4] =  1.; M[2,5] =  1.
+            M *= rho * Ax * L / 6.
+        
+        # Evaluate Transformation M = T^T * M * T
+        return np.dot(T.T,np.dot(M,T))
+  
     def calcKe(self):
         '''
         Eval element stiffness matrix in local coordinates
@@ -378,7 +436,7 @@ class Truss(BaseBeam):
         Ke[1,0] =-AxEoverL; Ke[1,1] =  AxEoverL
         
         return Ke
-        
+    
     def calcK(self):
         '''
         Eval element stiffness matrix in global coordinates.
@@ -482,6 +540,94 @@ class Beam(BaseBeam):
             if self.properties[name] < TINY:
                 raise FEError("Properties parameter '%s' not correct" % name)
     
+    def calcTe(self):
+        '''
+        Eval element tranformation matrix
+        '''
+        # Eval coordinate transformation matrix
+        Tl = self.calcT()
+        
+        # Build the final transformation matrix - a 12x12 matrix
+        T = np.zeros((12,12), dtype=float)
+        
+        for i in range(4):
+            for j in range(3):
+                for k in range(3):
+                    T[j+3*i,k+3*i] = Tl[j,k]
+        
+        return T
+        
+    def calcM(self, lumped = False):
+        '''
+        Eval elemenent consistent mass matrix in global coordinates
+        '''
+        mat = self.material
+        prop = self.properties
+        
+        L = self.length()
+        LL = L*L
+        rho = mat["Density"]
+        Ax, Iy, Iz = prop["Area"], prop["Iyy"], prop["Izz"]
+        
+        J = prop.get("Ixx", 0.)
+        if J == 0.:
+            # Simplification only valid for circular sections
+            J = Iy + Iz
+            
+        M = np.zeros((12,12), dtype=float)
+        
+        t  =  rho*Ax*L	
+        ry =  rho*Iy
+        rz =  rho*Iz
+        po =  rho*J*L
+        
+        if lumped:
+            t *= .5
+            ry *= .5
+            rz *= .5
+            po *= .5
+            
+            M[0][0] = M[1][1] = M[2][2] = M[6][6] = M[7][7] = M[8][8] = t
+
+            M[3][3] = M[9][9] = po + ry + rz
+            M[4][4] = M[10][10] = po + ry + rz
+            M[5][5] = M[11][11] = po + ry + rz
+
+            M[3][4] = M[4][3] = M[9][10] = M[10][9] = po + ry + rz
+            M[3][5] = M[5][3] = M[9][11] = M[11][9] = po + ry + rz
+            M[4][5] = M[5][4] = M[10][11] = M[11][10] = po + ry + rz
+
+        else:
+            M[0][0]  = M[6][6]   = t/3.
+            M[1][1]  = M[7][7]   = 13.*t/35. + 6.*rz/(5.*L)
+            M[2][2]  = M[8][8]   = 13.*t/35. + 6.*ry/(5.*L)
+            M[3][3]  = M[9][9] = po/3.
+            M[4][4]  = M[10][10] = t*LL/105. + 2.*L*ry/15.
+            M[5][5]  = M[11][11] = t*LL/105. + 2.*L*rz/15.
+
+            M[4][2]  = M[2][4]   = -11.*t*L/210. - ry/10.
+            M[5][1]  = M[1][5]   =  11.*t*L/210. + rz/10.
+            M[6][0]  = M[0][6]   =  t/6.
+
+            M[7][5]  = M[5][7]   =  13.*t*L/420. - rz/10.
+            M[8][4]  = M[4][8]   = -13.*t*L/420. + ry/10.
+            M[9][3] = M[3][9]  =  po/6. 
+            M[10][2] = M[2][10]  =  13.*t*L/420. - ry/10.
+            M[11][1] = M[1][11]  = -13.*t*L/420. + rz/10.
+
+            M[10][8] = M[8][10]  =  11.*t*L/210. + ry/10.
+            M[11][7] = M[7][11]  = -11.*t*L/210. - rz/10.
+
+            M[7][1]  = M[1][7]   =  9.*t/70. - 6.*rz/(5.*L)
+            M[8][2]  = M[2][8]   =  9.*t/70. - 6.*ry/(5.*L)
+            M[10][4] = M[4][10]  = -LL*t/140. - ry*L/30.
+            M[11][5] = M[5][11]  = -LL*t/140. - rz*L/30.
+        
+        T = self.calcTe()
+        
+        # Evaluate Transformation M = T^T * M * T
+        return np.dot(T.T,np.dot(M,T))
+        
     def calcKe(self):
         '''
         Eval element stiffness matrix in local coordinates.
@@ -548,17 +694,7 @@ class Beam(BaseBeam):
         Eval element stiffness matrix in global coordinates.
         '''
         K = self.calcKe()
-        
-        # Eval coordinate transformation matrix
-        Tl = self.calcT()
-        
-        # Build the final transformation matrix - a 12x12 matrix
-        T = np.zeros((12,12), dtype=float)
-        
-        for i in range(4):
-            for j in range(3):
-                for k in range(3):
-                    T[j+3*i,k+3*i] = Tl[j,k]
+        T = self.calcTe()
         
         # Evaluate Transformation K = T^T * K * T
         return np.dot(T.T,np.dot(K,T))
@@ -642,24 +778,25 @@ class Beam(BaseBeam):
                 for k in range(3):
                     T[j+3*i,k+3*i] = Tl[j,k]
                     
-        # Transform displacements and rotations from global to local coordinates
+        # nodes flipped?
         n1, n2 = self.nodes
         if n1.cz > n2.cz:
             fac = -1.
         else:
             fac = 1.
         
+        # Transform displacements and rotations from global to local coordinates
         d = np.zeros((12,), dtype=float)
         d[:6] = n1.results
         d[6:] = n2.results
         
         if not n1.coordSys is None:
-            Tcs = n1.coordSys.toMatrix()
+            Tcs = n1.coordSys
             d[:3] = np.dot(Tcs.T, d[:3])
             d[3:6] = np.dot(Tcs.T, d[3:6])
         
         if not n2.coordSys is None:
-            Tcs = n2.coordSys.toMatrix()
+            Tcs = n2.coordSys
             d[6:9] = np.dot(Tcs.T, d[6:9])
             d[9:12] = np.dot(Tcs.T, d[9:12])
             
@@ -715,40 +852,69 @@ class Beam(BaseBeam):
         
 if __name__ == '__main__':
     import math
-    from base import FE, Node, BoundCon, CoordSys, LineLoad, localX
+    from base import FE, Node, Transform, BoundCon, LineLoad, localX
     from postprocess import PostProcess
     
     class BeamFE(FE, PostProcess):
         pass
     
-    csys = CoordSys().fromEuler132(math.radians(45.),0.,0.)
-    
     fixed = BoundCon(Dx=0.,Dy=0.,Dz=0.,Rx=0.,Ry=0.,Rz=0.)
     pinned = BoundCon(Dx=0.,Dy=0.,Dz=0.)
-    roller = BoundCon(Dx=0.)
     free = BoundCon()
     
-    n1 = Node(0.,0.,0., boundCon = roller, coordSys = csys)
-    #n2 = Node(50.,0.,50., boundCon = BoundCon(Fx=5000.))
-    n2 = Node(50.,0.,50., boundCon = free)
-    n3 = Node(100.,0.,50., boundCon = free)
-    n4 = Node(100.,0.,0., boundCon = fixed) 
-    
     prof = Properties(Area=10., Ixx=100., Iyy=200., Izz=300.)
-    mat = Material(E = 30E6, G=12E6, nu = 0.4, rho = 7850.)
+    mat = Material(E = 30E6, G=12E6, nu = 0.4, Density = 7850.)
+    
+    n1 = Node(0.,0.,0., boundCon = fixed)
+    n2 = Node(0.,0.,100., boundCon = free)
+    n3 = Node(100.,0.,100., boundCon = free)
+    n4 = Node(100.,0.,0., boundCon = fixed) 
     
     b1 = Beam(n1, n2, mat, prof)
     b2 = Beam(n2, n3, mat, prof)
     b3 = Beam(n3, n4, mat, prof)
     
-    load = LineLoad(-1000., globalZ)
-    b2.loads.append(load)
-    
     fe = BeamFE((n1,n2,n3,n4),(b1,b2,b3))
     
     fe.validate()
-    fe.solve()
     
-    fe.printNodalDisp(globals=True)
-    fe.printNodalForces(totals='YES')
-    fe.printElementSectionForces(dx=25.)
+    fe.linkNodes()
+    fe.assembleElementK()
+    fe.assembleElementM()
+    
+    print 'arpack'
+    from solver import arpack
+    eval = np.array(arpack(fe.GK, fe.GM, 3))
+    print np.sqrt(np.abs(eval))
+    print .5*np.sqrt(np.abs(eval))/pi
+    print
+    
+    print 'pysparse'
+    from pysparse import spmatrix
+    from pysparse import itsolvers
+    from pysparse import jdsym
+    from pysparse import precon
+    
+    A = spmatrix.ll_mat_sym(fe.dofcount, len(fe.GK))
+    for row, col in fe.GK:
+        A[row,col] = fe.GK[row,col]
+    
+    M = spmatrix.ll_mat_sym(fe.dofcount, len(fe.GM))
+    for row, col in fe.GM:
+        M[row,col] = fe.GM[row,col]
+    
+    tau = -1.0
+
+    Atau = A.copy()
+    Atau.shift(tau, M)
+    K = precon.jacobi(Atau)
+
+    A = A.to_sss(); M = M.to_sss()
+    k_conv, lmbd, Q, it, it_innser  =  \
+        jdsym.jdsym(A, M, K, 3, tau,
+                    1e-10, 150, itsolvers.qmrs,
+                    jmin=5, jmax=10, clvl=0, strategy=1)
+    
+    print np.sqrt(lmbd)
+    print .5*np.sqrt(lmbd)/pi
+                                   
