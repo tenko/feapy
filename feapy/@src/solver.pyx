@@ -30,7 +30,23 @@ cdef extern from "spooles.h":
                          int neq, int nnz, int symmetryflag)
     void spooles_solve(void *ptr, double *b, int neq)
     void spooles_cleanup(void *ptr)
-        
+
+def arpack_factor(DOK K, DOK M):
+    # build matrix A = K - M
+    cdef COO A
+    cdef double[:] Adata
+    cdef int[:] Arow
+    cdef int[:] Acol
+    
+    A = K.toCOO()
+    Adata = A.data
+    Arow, Acol = A.row, A.col
+    for i in range(A.nnz):
+        Adata[i] -= <double>M[Arow[i],Acol[i]]
+    
+    # factor A with spooles
+    return Spooles(A, symflag = 0)
+    
 def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter = -1):
     cdef Spooles factor
     cdef array ret
@@ -42,21 +58,16 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
     
     rvec = 1            # eigenvectors should be calculate
     bmat = "G"          # general eigenvalue problem    
-    which = "LM"        # ask for largest magnitude
-    howmny = "A"
-    sigma = 1.
+    which = "LA"        # ask for values just to the right of shift
+    howmny = "A"        # all values
+    sigma = 1.          # shift value
     
     # build matrix A = K - M
-    A = DOK(K.shape)
-    for key in K:
-        A[key] = K[key] - M[key]
-    
-    # factor A with spooles
-    factor = Spooles(A, symflag = 0)
+    factor = arpack_factor(K, M)
     neq = factor.neq
     
     if mxiter < 0:
-        mxiter = 10*neq
+        mxiter = 1000
     
     if nev > neq:
         raise ValueError('nev >= neq')
@@ -68,17 +79,25 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
     
     ido = 0
     dz = neq
-    iparam[0] = 1             # Shift strategy (1->exact)
-    iparam[2] = mxiter        # Maximum number of iterations 
-    iparam[6] = 3             # shift-invert mode
-    
+    iparam[1 - 1] = 1           # Shift strategy (1->exact)
+    iparam[2 - 1] = 0           # Not used
+    iparam[3 - 1] = mxiter      # Maximum number of iterations 
+    iparam[4 - 1] = 1           # Block size 
+    iparam[5 - 1] = 0           # NCONV
+    iparam[6 - 1] = 0           # IUPD
+    iparam[7 - 1] = 3           # shift-invert mode
+    iparam[8 - 1] = 0           # NP
+    iparam[9 - 1] = 0           # NUMOP
+    iparam[10 - 1] = 0          # NUMOPB
+    iparam[11 - 1] = 0          # NUMREO
+ 
     lworkl = ncv*(ncv + 8)
     info = 0
     
     resid = <double *>malloc(sizeof(double) * neq)
     if resid is NULL: 
         raise MemoryError()
-        
+    
     zsize = ncv * neq
     z = <double *>malloc(sizeof(double) * zsize)
     if z is NULL: 
@@ -96,10 +115,10 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
     if tmp is NULL: 
         raise MemoryError()
     
-    d = <double *>malloc(sizeof(double) * nev)
+    d = <double *>malloc(sizeof(double) * (nev + 1))
     if d is NULL: 
         raise MemoryError()
-        
+    
     select = <int *>malloc(sizeof(int) * ncv)
     if select is NULL: 
         raise MemoryError()
@@ -126,8 +145,12 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
             elif ido == 2:
                 M.matvec_(&workd[ipntr[0] - 1], tmp, True)
             
-            else:
+            elif ido == 99:
                 break
+                
+            else:
+                print "*ERROR in arpack: ido=%d\n" % ido
+                return None
                 
             for row in range(neq):
                 workd[ipntr[1] - 1 + row] = tmp[row]
@@ -148,9 +171,9 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
             print "Error with dseupd, info = %d\n" % info
             return None
         
-        ret = array(shape=(nev,), itemsize=sizeof(double), format="d")
+        ret = array(shape=(iparam[4],), itemsize=sizeof(double), format="d")
         for i in range(iparam[4]):
-            (<double *>ret.data)[i] = d[i]
+            ret[i] = d[i]
             
     finally:
         free(resid)

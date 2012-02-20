@@ -1165,7 +1165,7 @@ if __name__ == '__main__':
     print os.getcwd()
     #fe = Parser('modal.inp')
     os.chdir('tests')
-    fe = Parser('frame_grav.inp')
+    fe = Parser('frame_modal.inp')
     
     #fe.printNodalDisp()
     #fe.printNodalForces(totals='YES')

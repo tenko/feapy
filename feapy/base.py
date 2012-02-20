@@ -12,11 +12,12 @@ import numpy as np
 try:
     import spmatrix
     import solver
-    SOLVER = 'spooles'
+    SOLVER = 'default'
 except ImportError:
     try:
         from pysparse import spmatrix, superlu
-        SOLVER = 'superlu'
+        from pysparse import jdsym, itsolvers, precon
+        SOLVER = 'pysparse'
     except ImportError:
         raise ImportError("sparse matrix solver not available")
 
@@ -734,9 +735,9 @@ class FE(object):
         profile = self.evalEnvelope()
         
         # Evaluate ESM's and assemble them to GSM
-        if SOLVER == 'spooles':
+        if SOLVER == 'default':
             self.GK = spmatrix.DOK((self.dofcount,self.dofcount))
-        elif SOLVER == 'superlu':
+        elif SOLVER == 'pysparse':
             self.GK = spmatrix.ll_mat_sym(self.dofcount, profile)
         else:
             raise FEError('unknown solver')
@@ -752,9 +753,9 @@ class FE(object):
         profile = self.evalEnvelope()
         
         # Evaluate ESM's and assemble them to GSM
-        if SOLVER == 'spooles':
+        if SOLVER == 'default':
             self.GM = spmatrix.DOK((self.dofcount,self.dofcount))
-        elif SOLVER == 'superlu':
+        elif SOLVER == 'pysparse':
             self.GM = spmatrix.ll_mat_sym(self.dofcount, profile)
         else:
             raise FEError('unknown solver')
@@ -830,54 +831,64 @@ class FE(object):
                     
                     forces[idx] += nodeloads[i*dofsize + dof]
     
-    def modalSolver(self, nev = 3):
-        if SOLVER == 'spooles':
-            print >>sys.stderr, "The arpack solver using spooles factoring"
-            print >>sys.stderr, "does currently not work correctly"
-            print >>sys.stderr, "revert to use pysparse"
+    def modalSolver(self, nev = 3, ncv = -1, tol = -1, mxiter = -1):
+        if SOLVER == 'default':
+            if ncv < 0:
+                ncv = 4*nev
+            ncv = ncv + nev
+            
+            if tol < 0.:
+                tol = 1e-2
+            
+            if mxiter < 0:
+                mxiter = 1000.
+                
+            return solver.arpack(self.GK, self.GM, nev, ncv, tol, mxiter)
+            
+        elif SOLVER == 'pysparse':
+            # copy matrixes
+            GK = self.GK
+            A = spmatrix.ll_mat_sym(self.dofcount, len(GK))
+            for row, col in GK:
+                A[row,col] = GK[row,col]
+            
+            GM = self.GM
+            M = spmatrix.ll_mat_sym(self.dofcount, len(GM))
+            for row, col in GM:
+                M[row,col] = GM[row,col]
+            
+            # Atau = A + tau*M
+            tau = -1.0
+            Atau = A.copy()
+            Atau.shift(tau, M)
+            K = precon.jacobi(Atau)
+            
+            # convert to skyline
+            A = A.to_sss()
+            M = M.to_sss()
+            
+            # solve
+            k_conv, lmbd, Q, it, it_innser  =  \
+                jdsym.jdsym(A, M, K, nev, tau,
+                            1e-6, 1000, itsolvers.qmrs,
+                            jmin=5, jmax=10, clvl=0, strategy=1)
+            
+            # eigen values
+            return lmbd
         
-        from pysparse import jdsym, itsolvers, precon, spmatrix
-        
-        # copy matrixes
-        GK = self.GK
-        A = spmatrix.ll_mat_sym(self.dofcount, len(GK))
-        for row, col in GK:
-            A[row,col] = GK[row,col]
-        
-        GM = self.GM
-        M = spmatrix.ll_mat_sym(self.dofcount, len(GM))
-        for row, col in GM:
-            M[row,col] = GM[row,col]
-        
-        # Atau = A + tau*M
-        tau = -1.0
-        Atau = A.copy()
-        Atau.shift(tau, M)
-        K = precon.jacobi(Atau)
-        
-        # convert to skyline
-        A = A.to_sss()
-        M = M.to_sss()
-        
-        # solve
-        k_conv, lmbd, Q, it, it_innser  =  \
-            jdsym.jdsym(A, M, K, nev, tau,
-                        1e-4, 4*self.dofcount, itsolvers.qmrs,
-                        jmin=5, jmax=10, clvl=0, strategy=1)
-        
-        # eigen values
-        return lmbd
+        else:
+            raise FEError('unknown solver')
             
     def staticSolver(self):
         self.solution = np.zeros((self.dofcount,), dtype=float)
         forces = self.nodalforces
         
-        if SOLVER == 'spooles':
+        if SOLVER == 'default':
             spooles = solver.Spooles(self.GK, symflag = 0)
             self.solution[:] = forces
             spooles.solve(self.solution)
 
-        elif SOLVER == 'superlu':
+        elif SOLVER == 'pysparse':
             mat = self.GK.to_csr()
             LU = superlu.factorize(mat, permc_spec=2, diag_pivot_thresh=0.)
             LU.solve(forces, self.solution)

@@ -882,12 +882,9 @@ if __name__ == '__main__':
     fe.assembleElementK()
     fe.assembleElementM()
     
-    print 'arpack'
-    from solver import arpack
-    eval = np.array(arpack(fe.GK, fe.GM, 3))
-    print np.sqrt(np.abs(eval))
-    print .5*np.sqrt(np.abs(eval))/pi
-    print
+    ev = fe.modalSolver(8)
+    print np.sqrt(ev)
+    print .5*np.sqrt(ev)/pi
     
     print 'pysparse'
     from pysparse import spmatrix
