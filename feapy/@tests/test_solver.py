@@ -21,7 +21,7 @@ class test_Solver(unittest.TestCase):
             self.assertAlmostEqual(va, vb, places)
     
     def test_solver(self):
-        dok = spmatrix.DOK()
+        dok = spmatrix.DOK((5,5))
         for col in range(5):
             for row in range(4, col, -1):
                 dok[row,col] = 1.
