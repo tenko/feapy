@@ -21,21 +21,21 @@ class test_Solver(unittest.TestCase):
             self.assertAlmostEqual(va, vb, places)
     
     def test_solver(self):
-        dok = spmatrix.DOK((5,5))
+        mat = spmatrix.LL((5,5), format = 'd', isSym=True)
         for col in range(5):
             for row in range(4, col, -1):
-                dok[row,col] = 1.
+                mat[row,col] = 1.
 
         for col in range(5):
             for row in range(4, col, -1):
-                dok[row,col] += 1.5
+                mat[row,col] += 1.5
 
         for row in range(5):
-            dok[row,row] = 5.
+            mat[row,row] = 5.
 
         rhs = np.array((1.,1.,1.,1.,1.), dtype=float)
         
-        spooles = solver.Spooles(dok, 0)
+        spooles = solver.Spooles(mat)
         spooles.solve(rhs)
         
         self.almostEqual(rhs, [0.06666667, 0.06666667, 0.06666667, 0.06666667, 0.06666667])
