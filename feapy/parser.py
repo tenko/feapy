@@ -1053,6 +1053,7 @@ class Parser(FE, PostProcess):
             raise FEError("Analysis '%s' not supported" % self.analysis)
             
         if self.step == 1:
+            print >>sys.stdout, "Solving case '%s'\n" % self.casename
             print >>sys.stdout, "Model size:\n"
             
             # store node in sequence
@@ -1085,19 +1086,16 @@ class Parser(FE, PostProcess):
             
             # Link node DOF's to GSM index
             self.linkNodes()
-            
-            # Eval envelope and profile of GSM
-            self.evalEnvelope()
+        
+        # Evaluate element stiffness matrix and assemble them to global
+        self.assembleElementK()
         
         print >>sys.stdout, "STEP:        %d" % self.step
         print >>sys.stdout, "Analysis:    %s" % self.analysis
         print >>sys.stdout, ""
         print >>sys.stdout, "Number of equations:     %d" % self.dofcount
-        print >>sys.stdout, "Nonzero matrix elements: %d" % np.sum(self.envelope)
+        print >>sys.stdout, "Nonzero matrix elements: %d" % self.GK.nnz
         print >>sys.stdout, ""
-        
-        # Evaluate element stiffness matrix and assemble them to global
-        self.assembleElementK()
         
         if self.analysis == 'FREQUENCY':
             # Evaluate element mass matrix and assemble them to global
@@ -1162,10 +1160,9 @@ class Parser(FE, PostProcess):
         return value
         
 if __name__ == '__main__':
-    print os.getcwd()
     #fe = Parser('modal.inp')
     os.chdir('tests')
-    fe = Parser('frame_modal.inp')
+    fe = Parser('truss_tower.inp')
     
     #fe.printNodalDisp()
     #fe.printNodalForces(totals='YES')

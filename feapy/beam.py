@@ -866,13 +866,13 @@ if __name__ == '__main__':
     mat = Material(E = 30E6, G=12E6, nu = 0.4, Density = 7850.)
     
     n1 = Node(0.,0.,0., boundCon = fixed)
-    n2 = Node(0.,0.,100., boundCon = free)
+    n4 = Node(0.,0.,100., boundCon = free)
     n3 = Node(100.,0.,100., boundCon = free)
-    n4 = Node(100.,0.,0., boundCon = fixed) 
+    n2 = Node(100.,0.,0., boundCon = fixed) 
     
-    b1 = Beam(n1, n2, mat, prof)
+    b1 = Beam(n1, n4, mat, prof)
     b2 = Beam(n2, n3, mat, prof)
-    b3 = Beam(n3, n4, mat, prof)
+    b3 = Beam(n3, n2, mat, prof)
     
     fe = BeamFE((n1,n2,n3,n4),(b1,b2,b3))
     
@@ -882,6 +882,10 @@ if __name__ == '__main__':
     fe.assembleElementK()
     fe.assembleElementM()
     
+    print fe.dofcount
+    print fe.GK.nnz
+    
+    '''
     ev = fe.modalSolver(8)
     print np.sqrt(ev)
     print .5*np.sqrt(ev)/pi
@@ -914,4 +918,4 @@ if __name__ == '__main__':
     
     print np.sqrt(lmbd)
     print .5*np.sqrt(lmbd)/pi
-                                   
+    '''

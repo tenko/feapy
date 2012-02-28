@@ -452,50 +452,6 @@ class Element(object):
             K = np.dot(T.T,np.dot(K,T))
                 
         return K
-        
-    def calcEnvelope(self, envelope):
-        '''
-        Implementation of function to evaluate influence of
-        an element on envelope and profile
-        '''
-        # Loop through stiffness matrix of element, on node level
-        swapped = False
-        for i in range(self.nodeCount):
-            # number of active dofs of this node
-            activedofi = self.nodes[i].activeDofSet().count()
-            # Do only something if this node has any active DOF's
-            if activedofi < 0:
-                continue
-            # first global index of this node
-            gmi = self.nodes[i].idxG
-            
-            # Loop through lower half stiffness matrix of element, on node level
-            for j in range(0, i + 1):
-                # number of active dofs of this node
-                activedofj = self.nodes[j].activeDofSet().count()
-                # Do only something if this node has any active DOF's
-                if activedofj < 0:
-                    continue
-                # first global index of this node
-                gmj = self.nodes[j].idxG
-                
-                # Check bandwidthes for all lines in GSM that get influenced from Node i
-                for dof in range(activedofi):
-                    linebandwidth = gmi - gmj + 1 + dof
-                    if linebandwidth > envelope[ gmi + dof ]:
-                        envelope[ gmi + dof ] = linebandwidth
-                    
-                # if considered node is in the upper half of symmetric GSM swap indices
-                if j > i:
-                    swapped = True
-                    i,j = j,i
-                    activedofi,activedofj = activedofj,activedofi
-                
-                # Swap indices back for further use
-                if swapped:
-                    swapped = False
-                    i,j = j,i
-                    activedofi,activedofj = activedofj,activedofi
                 
     def assembleElementK(self, GM):
         '''
@@ -612,7 +568,6 @@ class FE(object):
         self.GM = None
         self.step = 0
         self.dofcount = 0
-        self.envelope = None
         self.nodalforces = None
         self.elementforces = None
         
@@ -712,33 +667,16 @@ class FE(object):
         
         # Give back Size of GM to be created later on
         self.dofcount = idx
-        
-    def evalEnvelope(self):
-        '''
-        Evaluation of envelope and profile of the GM
-        '''
-        self.envelope = np.zeros((self.dofcount,), dtype=int)
-        
-        for element in self.elements:
-            element.calcEnvelope(self.envelope)
-        
-        # envelope of first row is per definition equal 1
-        self.envelope[ 0 ] = 1
-        
-        return np.sum(self.envelope)
     
     def assembleElementK(self):
         '''
         Assembly: Evaluate element stiffness matrix and fill GM.
         '''
-        # Eval envelope and profile of GSM
-        profile = self.evalEnvelope()
-        
         # Evaluate ESM's and assemble them to GSM
         if SOLVER == 'default':
-            self.GK = spmatrix.DOK((self.dofcount,self.dofcount))
+            self.GK = spmatrix.LLd((self.dofcount,self.dofcount), isSym = True)
         elif SOLVER == 'pysparse':
-            self.GK = spmatrix.ll_mat_sym(self.dofcount, profile)
+            self.GK = spmatrix.ll_mat_sym(self.dofcount, self.dofcount)
         else:
             raise FEError('unknown solver')
             
@@ -749,14 +687,11 @@ class FE(object):
         '''
         Assembly: Evaluate element mass matrix and fill GM.
         '''
-        # Eval envelope and profile of GSM
-        profile = self.evalEnvelope()
-        
         # Evaluate ESM's and assemble them to GSM
         if SOLVER == 'default':
-            self.GM = spmatrix.DOK((self.dofcount,self.dofcount))
+            self.GM = spmatrix.LLd((self.dofcount,self.dofcount), isSym=True)
         elif SOLVER == 'pysparse':
-            self.GM = spmatrix.ll_mat_sym(self.dofcount, profile)
+            self.GM = spmatrix.ll_mat_sym(self.dofcount, self.dofcount)
         else:
             raise FEError('unknown solver')
             
@@ -796,11 +731,11 @@ class FE(object):
                 if load != 0.:
                     # loop over all DOF's
                     for j in range(len(forces)):
-                        if j < idx and envelope[idx] > idx - j:
+                        if j < idx:
                             # upper triangle
                             forces[j] -= load * self.GK[idx,j]
                             self.GK[idx,j] = 0.
-                        elif envelope[j] > j - idx:
+                        else:
                             # lower triangle
                             forces[j] -= load * self.GK[j,idx]
                             self.GK[j,idx] = 0.
@@ -884,7 +819,7 @@ class FE(object):
         forces = self.nodalforces
         
         if SOLVER == 'default':
-            spooles = solver.Spooles(self.GK, symflag = 0)
+            spooles = solver.Spooles(self.GK)
             self.solution[:] = forces
             spooles.solve(self.solution)
 
