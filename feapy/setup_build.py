@@ -7,6 +7,7 @@
 #
 import sys
 import os
+import glob
 
 from distutils.core import setup
 from distutils.extension import Extension
@@ -33,8 +34,9 @@ try:
         Extension(
             "spmatrix",
             #sources=["@src/spmatrix.pyx"],
+            #depends=glob.glob("@src/spmatrix/*.pxi"),
             sources=["@src/spmatrix.c"],
-            include_dirs = ["@src"],
+            include_dirs = ["@src/spmatrix"],
         ),
         Extension(
             "solver",
@@ -42,8 +44,8 @@ try:
             #extra_objects=["@src/libarpack.a"],
             sources=["@src/solver.c", "@src/spooles.c"],
             include_dirs = ["@src", r'/usr/include/spooles',],
-            libraries=["spoolesMT", "spooles", "lapack", "blas", "pthread"],
-            #libraries=["spoolesMT", "spooles", "pthread", "gfortran"],
+            libraries=["spoolesMT", "spooles", "arpack", "lapack", "blas", "pthread"],
+            #libraries=["spoolesMT", "spooles", "arpack", "pthread", "gfortran"],
             extra_compile_args = ["-DUSE_MT"],
             #extra_link_args = MKL_LINK,
         ),
