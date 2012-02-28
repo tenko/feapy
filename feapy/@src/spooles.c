@@ -453,8 +453,8 @@ DenseMtx *fsolve_MT(struct factorinfo *pfi, DenseMtx *mtxB)
 FILE *msgFile;
 //struct factorinfo pfi;
 
-void *spooles_factor(int *row, int *col, double *data,
-                    int neq, int nnz, int symmetryflag)
+void *spooles_factor(long *row, long *col, double *data,
+                    long neq, long nnz, int symmetryflag)
 {
 	InpMtx *mtxA;
     struct factorinfo *pfi_ = (struct factorinfo *)malloc(sizeof(struct factorinfo));
@@ -473,7 +473,7 @@ void *spooles_factor(int *row, int *col, double *data,
     mtxA = InpMtx_new();
     InpMtx_init(mtxA, INPMTX_BY_ROWS, SPOOLES_REAL, nnz, neq);
 	
-    int i;
+    long i;
     for(i = 0 ; i<nnz ; i++) {
         InpMtx_inputRealEntry(mtxA, row[i], col[i], data[i]);
     }
@@ -568,13 +568,13 @@ void *spooles_factor(int *row, int *col, double *data,
  * 
 */
 
-void spooles_solve(void *ptr, double *b, int neq)
+void spooles_solve(void *ptr, double *b, long neq)
 {
 	/* rhs vector B
 	 * Note that there is only one rhs vector, thus
 	 * a bit simpler that the AllInOne example
 	 */
-	int size = neq;
+	long size = neq;
 	DenseMtx *mtxB,*mtxX;
     struct factorinfo *pfi_ = ptr;
     

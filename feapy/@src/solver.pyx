@@ -3,9 +3,9 @@
 # This file is part of feapy - See LICENSE.txt
 #
 from libc.stdlib cimport malloc, free
-from cython cimport array
+from cython.view cimport array
 
-from spmatrix cimport DOK, COO, CSR
+from spmatrix cimport COOd, LLd
 
 cdef extern:
     # arpack
@@ -26,30 +26,27 @@ cdef extern from "spooles.h":
     cdef struct factorinfo:
         pass
     
-    void *spooles_factor(int *row, int *col, double *data,
-                         int neq, int nnz, int symmetryflag)
-    void spooles_solve(void *ptr, double *b, int neq)
+    void *spooles_factor(long *row, long *col, double *data,
+                         long neq, long nnz, int symmetryflag)
+    void spooles_solve(void *ptr, double *b, long neq)
     void spooles_cleanup(void *ptr)
 
-def arpack_factor(DOK K, DOK M):
+def arpack_factor(LLd K, LLd M):
     # build matrix A = K - M
-    cdef COO A
-    cdef double[:] Adata
-    cdef int[:] Arow
-    cdef int[:] Acol
+    cdef COOd A = K.toCOO()
+    cdef double[:] data = A.data
+    cdef long[:] row = A.row
+    cdef long[:] col = A.col
+    cdef long i
     
-    A = K.toCOO()
-    Adata = A.data
-    Arow, Acol = A.row, A.col
     for i in range(A.nnz):
-        Adata[i] -= <double>M[Arow[i],Acol[i]]
+        data[i] -= M.getitem(row[i], col[i])
     
     # factor A with spooles
-    return Spooles(A, symflag = 0)
+    return Spooles(A)
     
-def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter = -1):
+def arpack(LLd K, LLd M, int nev = 3, int ncv = -1, double tol = 0., int mxiter = -1):
     cdef Spooles factor
-    cdef COO Mv = M.toCOO()
     cdef array ret
     cdef double *resid, *workd, *workl, *z, *tmp, *d, sigma
     cdef char *bmat, *which, *howmny 
@@ -134,7 +131,7 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
                 tmp[row] = 0.
             
             if ido == -1:
-                Mv.matvec_(&workd[ipntr[0] - 1], tmp, True)
+                M.cmatvec(&workd[ipntr[0] - 1], tmp)
                 factor.solve_(tmp)
                     
             elif ido == 1:
@@ -144,7 +141,7 @@ def arpack(DOK K, DOK M, int nev = 3, int ncv = -1, double tol = 0., int mxiter 
                 factor.solve_(tmp)
                 
             elif ido == 2:
-                Mv.matvec_(&workd[ipntr[0] - 1], tmp, True)
+                M.cmatvec(&workd[ipntr[0] - 1], tmp)
             
             elif ido == 99:
                 break
@@ -191,17 +188,23 @@ cdef class Spooles:
     cdef void *ptr
     cdef readonly int neq
     
-    def __init__(self, mat, int symflag = 0):
-        coo = mat.toCOO(copy = False)
+    def __init__(self, mat):
+        cdef COOd coo = mat.toCOO(copy = False)
+        cdef double[:] data = coo.data
+        cdef long[:] row = coo.row
+        cdef long[:] col = coo.col
+        cdef int symflag
+        
         assert coo.shape[0] == coo.shape[1], 'Expected square matrix'
         self.neq = coo.shape[0]
         
-        cdef double[:] data_view = coo.data
-        cdef int[:] row_view = coo.row
-        cdef int[:] col_view = coo.col
+        if coo.isSym:
+            symflag = 0
+        else:
+            symflag = 2
         
-        self.ptr = spooles_factor(&row_view[0], &col_view[0], &data_view[0],
-                                  coo.shape[0], coo.nnz, symflag)
+        self.ptr = spooles_factor(&row[0], &col[0], &data[0], self.neq, coo.nnz,
+                                  symflag)
     
     def __dealloc__(self):
         spooles_cleanup(self.ptr)

@@ -118,24 +118,14 @@ cdef class LLBase(SPMatrix):
         cdef long row, col
         
         row, col = self.getRowCol(key)
-        
-        node = self.searchNode(row, col)
-        if node != NULL:
-            return self.getValue(node.idx)
-        else:
-            return self.getValue(-1)
+        return self.getitem(row,col)
             
     def __setitem__(self, tuple key, value):
         cdef llnode *node
         cdef long row, col
         
         row, col = self.getRowCol(key)
-        
-        node = self.getNode(row, col)
-        if node != NULL:
-            self.setValue(node.idx, value)
-        else:
-            raise SPMatrixError('failed to create node')
+        self.setitem(row, col, value)
     
     def __str__(self):
         cdef llnode *root, *cur
@@ -220,9 +210,27 @@ cdef class LLB(LLBase):
             return (<ubyte *>self.lldat.data)[idx]
         else:
             return 0
-            
+    
     cpdef setValue(self, long idx, ubyte value):
         (<ubyte *>self.lldat.data)[idx] = value
+    
+    cpdef ubyte getitem(self, long row, long col):
+        cdef llnode *node
+        
+        node = self.searchNode(row, col)
+        if node != NULL:
+            return self.getValue(node.idx)
+        else:
+            return 0
+            
+    cpdef setitem(self, long row, long col, ubyte value):
+        cdef llnode *node
+        
+        node = self.getNode(row, col)
+        if node != NULL:
+            self.setValue(node.idx, value)
+        else:
+            raise SPMatrixError('failed to create node')
         
 cdef class LLd(LLBase):
     def __init__(self, shape, long sizeHint = 0, bint isSym = False):
@@ -250,6 +258,24 @@ cdef class LLd(LLBase):
     cpdef setValue(self, long idx, double value):
         (<double *>self.lldat.data)[idx] = value
     
+    cpdef double getitem(self, long row, long col):
+        cdef llnode *node
+        
+        node = self.searchNode(row, col)
+        if node != NULL:
+            return self.getValue(node.idx)
+        else:
+            return 0.
+            
+    cpdef setitem(self, long row, long col, double value):
+        cdef llnode *node
+        
+        node = self.getNode(row, col)
+        if node != NULL:
+            self.setValue(node.idx, value)
+        else:
+            raise SPMatrixError('failed to create node')
+            
     cpdef scale(self, double value):
         scaleLL(&self.lldat, value)
         return self
@@ -290,6 +316,24 @@ cdef class LLZ(LLBase):
     cpdef setValue(self, long idx, Zcomplex value):
         (<Zcomplex *>self.lldat.data)[idx] = value
     
+    cpdef Zcomplex getitem(self, long row, long col):
+        cdef llnode *node
+        
+        node = self.searchNode(row, col)
+        if node != NULL:
+            return self.getValue(node.idx)
+        else:
+            return 0.
+            
+    cpdef setitem(self, long row, long col, Zcomplex value):
+        cdef llnode *node
+        
+        node = self.getNode(row, col)
+        if node != NULL:
+            self.setValue(node.idx, value)
+        else:
+            raise SPMatrixError('failed to create node')
+            
     cpdef scale(self, Zcomplex value):
         scaleLL(&self.lldat, value)
         return self

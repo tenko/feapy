@@ -42,9 +42,9 @@ struct factorinfo
 
 };
 
-void *spooles_factor(int *row, int *col, double *data,
-                    int neq, int nnz, int symmetryflag);
+void *spooles_factor(long *row, long *col, double *data,
+                    long neq, long nnz, int symmetryflag);
 
-void spooles_solve(void *ptr, double *b, int neq);
+void spooles_solve(void *ptr, double *b, long neq);
 
 void spooles_cleanup(void *ptr);
